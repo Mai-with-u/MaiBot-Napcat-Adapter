@@ -319,7 +319,44 @@ class NoticeHandler:
             },
         )
 
-        return seg_data, operator_info
+        # 生成可读 text 段
+        fetched_group_info = await get_group_info(self.server_connection, group_id)
+        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+
+        # 永久禁言或全体禁言时不显示时间
+        if duration == -1 or user_id == 0:
+            human_time = ""
+        else:
+            # 智能格式化时长（天 / 时 / 分 / 秒）
+            days = duration // 86400
+            hours = (duration % 86400) // 3600
+            mins = (duration % 3600) // 60
+            secs = duration % 60
+
+            parts = []
+            if days > 0:
+                parts.append(f"{days} 天")
+            if hours > 0:
+                parts.append(f"{hours} 小时")
+            if mins > 0:
+                parts.append(f"{mins} 分钟")
+            if secs > 0:
+                parts.append(f"{secs} 秒")
+
+            human_time = " ".join(parts) if parts else "0 秒"
+
+        display_target = banned_user_info.user_nickname if banned_user_info else "全体成员"
+
+        if human_time:
+            text_str = f"禁言了 {display_target}（{human_time}）"
+        else:
+            text_str = f"禁言了 {display_target}"
+
+        text_seg = Seg(type="text", data=text_str)
+
+        # 合并为 seglist：既有 notify（供程序用），也有 text（供所见日志/显示）
+        notify_seg = seg_data
+        return Seg(type="seglist", data=[notify_seg, text_seg]), operator_info
 
     async def handle_lift_ban_notify(
         self, raw_message: dict, group_id: int
@@ -375,6 +412,18 @@ class NoticeHandler:
             )
             self._lift_operation(group_id, user_id)
 
+            # 防止自然检测重复触发：从banned_list中移除该用户
+            for record in list(self.banned_list):
+                if record.user_id == user_id and record.group_id == group_id:
+                    self.banned_list.remove(record)
+                    break
+
+            # 同时也避免lifted_list重复添加
+            for record in list(self.lifted_list):
+                if record.user_id == user_id and record.group_id == group_id:
+                    self.lifted_list.remove(record)
+                    break
+
         seg_data: Seg = Seg(
             type="notify",
             data={
@@ -382,7 +431,15 @@ class NoticeHandler:
                 "lifted_user_info": lifted_user_info.to_dict() if lifted_user_info else None,
             },
         )
-        return seg_data, operator_info
+        
+        # 可读 text 段
+        fetched_group_info = await get_group_info(self.server_connection, group_id)
+        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+        display_target = lifted_user_info.user_nickname if lifted_user_info else "全体成员"
+        text_str = f"解除禁言：{display_target}"
+        text_seg = Seg(type="text", data=text_str)
+        notify_seg = seg_data
+        return Seg(type="seglist", data=[notify_seg, text_seg]), operator_info
 
     async def put_notice(self, message_base: MessageBase) -> None:
         """
@@ -399,6 +456,12 @@ class NoticeHandler:
                 lift_record = self.lifted_list.pop()
                 group_id = lift_record.group_id
                 user_id = lift_record.user_id
+
+                # 防御：防止同一用户重复自然解除
+                for record in list(self.lifted_list):
+                    if record.user_id == user_id and record.group_id == group_id:
+                        logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
+                        continue
 
                 db_manager.delete_ban_record(lift_record)  # 从数据库中删除禁言记录
 
@@ -420,7 +483,12 @@ class NoticeHandler:
                     platform=global_config.maibot_server.platform_name,
                     message_id="notice",
                     time=time.time(),
-                    user_info=None,  # 自然解除禁言没有操作者
+                    user_info=UserInfo(         # 自然解除禁言没有操作者
+                           platform=global_config.maibot_server.platform_name,
+                           user_id=0,
+                           user_nickname="",   # 这里留空
+                           user_cardname=None,
+                     ),
                     group_info=group_info,
                     template_info=None,
                     format_info=None,
@@ -474,28 +542,32 @@ class NoticeHandler:
             user_cardname=user_cardname,
         )
 
-        return Seg(
+        fetched_group_info = await get_group_info(self.server_connection, group_id)
+        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+        notify_seg = Seg(
             type="notify",
             data={
                 "sub_type": "lift_ban",
                 "lifted_user_info": lifted_user_info.to_dict(),
             },
         )
+        text_seg = Seg(type="text", data=f"{user_nickname} 已自然解除禁言")
+        return Seg(type="seglist", data=[notify_seg, text_seg])
 
     async def auto_lift_detect(self) -> None:
         while True:
             if len(self.banned_list) == 0:
                 await asyncio.sleep(5)
                 continue
-            for ban_record in self.banned_list:
+            for ban_record in list(self.banned_list):
                 if ban_record.user_id == 0 or ban_record.lift_time == -1:
                     continue
                 if ban_record.lift_time <= int(time.time()):
-                    # 触发自然解除禁言
                     logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
                     self.lifted_list.append(ban_record)
                     self.banned_list.remove(ban_record)
             await asyncio.sleep(5)
+
 
     async def send_notice(self) -> None:
         """
