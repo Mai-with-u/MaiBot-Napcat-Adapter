@@ -103,12 +103,12 @@ class NoticeHandler:
                         event_type = raw_message.get("event_type")
                         status_text = raw_message.get("status_text", "")
 
-                        # 仅私聊有效
+                        # 仅手机私聊有效
                         if not group_id or group_id == 0:
                             if status_text:
                                 logger.info(f"用户 {user_id} {status_text}")
                             else:
-                                status_map = {1: "对方正在输入中", 2: "对方正在输入中", 0: "对方已停止输入"}
+                                status_map = {1: "正在输入中", 2: "已清空聊天框内容"}
                                 logger.info(f"用户 {user_id} {status_map.get(event_type, '输入状态变更')}")
                         return
                     case NoticeType.Notify.poke:
