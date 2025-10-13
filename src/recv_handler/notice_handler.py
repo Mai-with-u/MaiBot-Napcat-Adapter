@@ -96,6 +96,21 @@ class NoticeHandler:
             case NoticeType.notify:
                 sub_type = raw_message.get("sub_type")
                 match sub_type:
+                    # 私聊输入状态（“对方正在输入...”）
+                    case "input_status":
+                        user_id = raw_message.get("user_id")
+                        group_id = raw_message.get("group_id", 0)
+                        event_type = raw_message.get("event_type")
+                        status_text = raw_message.get("status_text", "")
+
+                        # 仅私聊有效
+                        if not group_id or group_id == 0:
+                            if status_text:
+                                logger.info(f"用户 {user_id} {status_text}")
+                            else:
+                                status_map = {1: "对方正在输入中", 2: "对方正在输入中", 0: "对方已停止输入"}
+                                logger.info(f"用户 {user_id} {status_map.get(event_type, '输入状态变更')}")
+                        return
                     case NoticeType.Notify.poke:
                         if global_config.chat.enable_poke and await message_handler.check_allow_to_chat(
                             user_id, group_id, False, False
