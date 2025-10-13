@@ -332,6 +332,109 @@ class MessageHandler:
                         logger.warning("转发消息处理失败")
                 case RealMessageType.node:
                     logger.warning("不支持转发消息节点解析")
+                case RealMessageType.json:
+                    try:
+                        data_field = sub_message.get("data", {})
+                        raw_json_str = data_field.get("data", "")
+                        if not raw_json_str:
+                            logger.warning("Napcat JSON卡片中未找到 data 字段")
+                            seg_message.append(Seg(type="text", data="[JSON卡片消息: 空]"))
+                            break
+
+                        # 二次解析 Napcat JSON
+                        try:
+                            parsed_data = json.loads(raw_json_str)
+                        except Exception as e:
+                            logger.error(f"Napcat JSON 二次解析失败: {e}")
+                            seg_message.append(Seg(type="text", data=f"[JSON卡片原始字符串截断]: {raw_json_str[:200]}..."))
+                            break
+
+                        app_name = parsed_data.get("app", "未知应用")
+                        view = parsed_data.get("view", "")
+                        prompt = parsed_data.get("prompt", "")
+                        meta = parsed_data.get("meta", {})
+                        logger.debug(f"Napcat JSON卡片类型: {app_name} / {view}")
+
+                        # 礼物卡片
+                        if app_name == "com.tencent.giftmall.giftark":
+                            gift = meta.get("giftData", {})
+                            gift_name = gift.get("giftName", "未知礼物")
+                            gift_msg = gift.get("giftMsg", "")
+                            seg_message.append(Seg(type="text", data=f"[礼物卡片] {gift_name}：{gift_msg}"))
+
+                        # 推荐联系人
+                        elif app_name == "com.tencent.contact.lua":
+                            contact_info = meta.get("contact", {})
+                            name = contact_info.get("nickname", "未知联系人")
+                            tag = contact_info.get("tag", "推荐联系人")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {name}"))
+
+                        # 推荐群聊
+                        elif app_name == "com.tencent.troopsharecard":
+                            contact_info = meta.get("contact", {})
+                            name = contact_info.get("nickname", "未知群聊")
+                            tag = contact_info.get("tag", "推荐群聊")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {name}"))
+
+                        # QQ小程序卡片
+                        elif app_name == "com.tencent.miniapp_01":
+                            detail = meta.get("detail_1", {})
+                            title = detail.get("title", "未知小程序")
+                            desc = detail.get("desc", "")
+                            seg_message.append(Seg(type="text", data=f"[QQ小程序] {title}：{desc}"))
+
+                        # 图文分享（如 哔哩哔哩、网页）
+                        elif app_name == "com.tencent.tuwen.lua":
+                            news = meta.get("news", {})
+                            title = news.get("title", "未知标题")
+                            desc = news.get("desc", "")
+                            tag = news.get("tag") or "图文分享"
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+
+                        # QQ收藏分享
+                        elif app_name == "com.tencent.template.qqfavorite.share":
+                            news = meta.get("news", {})
+                            desc = news.get("desc", "")
+                            seg_message.append(Seg(type="text", data=f"[QQ收藏] {desc}"))
+
+                        # QQ地图位置分享
+                        elif app_name == "com.tencent.map":
+                            location = meta.get("Location.Search", {})
+                            name = location.get("name", "未知地点")
+                            address = location.get("address", "")
+                            seg_message.append(Seg(type="text", data=f"[位置] {address} · {name}"))
+
+                        # 通用 com.tencent.*.lua 匹配（包括 music.lua、tuwen.lua 等）
+                        elif app_name.startswith("com.tencent.") and app_name.endswith(".lua"):
+                            # 自动提取 meta 里的第一个子字段（news/music/video/app...）
+                            if isinstance(meta, dict) and meta:
+                                first_key = next(iter(meta))
+                                news = meta.get(first_key, {})
+                            else:
+                                news = {}
+
+                            title = news.get("title", "未知标题")
+                            desc = news.get("desc", "")
+                            tag = news.get("tag") or "分享"
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+
+                        # 未识别类型
+                        else:
+                            logger.warning(f"[未识别JSON卡片: {app_name}] {prompt}")
+
+                    except Exception as e:
+                        logger.error(f"JSON卡片消息处理失败: {e}")
+
+                # 文件消息
+                case RealMessageType.file:
+                    file_data = sub_message.get("data", {})
+                    file_name = file_data.get("file", "未知文件")
+                    file_size = file_data.get("file_size", "0")
+                    try:
+                        size_mb = round(int(file_size) / 1024 / 1024, 2)
+                    except Exception:
+                        size_mb = 0
+                    seg_message.append(Seg(type="text", data=f"[文件] {file_name}（{size_mb} MB）"))
                 case _:
                     logger.warning(f"未知消息类型: {sub_message_type}")
         return seg_message, additional_config
