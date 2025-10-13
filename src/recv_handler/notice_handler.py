@@ -458,10 +458,9 @@ class NoticeHandler:
                 user_id = lift_record.user_id
 
                 # 防御：防止同一用户重复自然解除
-                for record in list(self.lifted_list):
-                    if record.user_id == user_id and record.group_id == group_id:
-                        logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
-                        continue
+                if any(r.user_id == user_id and r.group_id == group_id for r in self.lifted_list):
+                     logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
+                     continue
 
                 db_manager.delete_ban_record(lift_record)  # 从数据库中删除禁言记录
 
@@ -483,7 +482,7 @@ class NoticeHandler:
                     platform=global_config.maibot_server.platform_name,
                     message_id="notice",
                     time=time.time(),
-                    user_info=UserInfo(         # 自然解除禁言没有操作者
+                    user_info=UserInfo(        # 自然解除禁言没有操作者
                            platform=global_config.maibot_server.platform_name,
                            user_id=0,
                            user_nickname="",   # 这里留空
@@ -535,6 +534,10 @@ class NoticeHandler:
             user_nickname = fetched_member_info.get("nickname")
             user_cardname = fetched_member_info.get("card")
 
+        # 防止 nickname 为空字符串
+        if not user_nickname or not user_nickname.strip():
+            user_nickname = "QQ用户"
+
         lifted_user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
             user_id=user_id,
@@ -563,6 +566,7 @@ class NoticeHandler:
                 if ban_record.user_id == 0 or ban_record.lift_time == -1:
                     continue
                 if ban_record.lift_time <= int(time.time()):
+                    # 触发自然解除禁言
                     logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
                     self.lifted_list.append(ban_record)
                     self.banned_list.remove(ban_record)
