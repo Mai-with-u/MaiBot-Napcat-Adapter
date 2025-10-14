@@ -404,8 +404,8 @@ class MessageHandler:
                             address = location.get("address", "")
                             seg_message.append(Seg(type="text", data=f"[位置] {address} · {name}"))
 
-                        # 通用 com.tencent.*.lua 匹配（包括 music.lua、tuwen.lua 等）
-                        elif app_name.startswith("com.tencent.") and app_name.endswith(".lua"):
+                        # 通用匹配（包括 music.lua、tuwen.lua 等）
+                        elif app_name:
                             # 自动提取 meta 里的第一个子字段（news/music/video/app...）
                             if isinstance(meta, dict) and meta:
                                 first_key = next(iter(meta))
@@ -413,9 +413,22 @@ class MessageHandler:
                             else:
                                 news = {}
 
-                            title = news.get("title", "未知标题")
-                            desc = news.get("desc", "")
-                            tag = news.get("tag") or "分享"
+                            title = news.get("title") or meta.get("title")
+                            desc = news.get("desc") or meta.get("desc")
+                            tag = news.get("tag") or meta.get("tag")
+    
+                            # 如果三者全都为空，记录错误并跳过输出
+                            if not (title or desc or tag):
+                                logger.error(f"[JSON解析失败] app_name={app_name}，未识别的字段：meta={meta}")
+                                continue
+
+                            if not tag:
+                                tag = "分享"
+                            if not title:
+                                title = "未知标题"
+                            if not desc:
+                                desc = ""
+                            
                             seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
 
                         # 未识别类型
