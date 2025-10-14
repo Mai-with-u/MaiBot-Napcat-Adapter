@@ -102,7 +102,6 @@ class NoticeHandler:
                         group_id = raw_message.get("group_id", 0)
                         event_type = raw_message.get("event_type")
                         status_text = raw_message.get("status_text", "")
-
                         # 仅手机私聊有效
                         if not group_id or group_id == 0:
                             if status_text:
@@ -138,6 +137,104 @@ class NoticeHandler:
                         system_notice = True
                     case _:
                         logger.warning(f"不支持的group_ban类型: {notice_type}.{sub_type}")
+            case "group_admin":
+                sub_type = raw_message.get("sub_type")
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                self_id = raw_message.get("self_id")
+                member_info = await get_member_info(self.server_connection, group_id, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                if user_id == self_id:
+                    if sub_type == "set":
+                        text = "（你）被设置为管理员"
+                    elif sub_type == "unset":
+                        text = "（你）被取消管理员"
+                    else:
+                        text = f"管理员状态变更: {sub_type}"
+                else:
+                    if sub_type == "set":
+                        text = f"被设置为管理员"
+                    elif sub_type == "unset":
+                        text = f"被取消管理员"
+                    else:
+                        text = f"管理员状态变更: {sub_type}"
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
+            case "group_increase":
+                sub_type = raw_message.get("sub_type")
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                operator_id = raw_message.get("operator_id")
+                self_id = raw_message.get("self_id")
+                member_info = await get_member_info(self.server_connection, group_id, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                operator_info = await get_member_info(self.server_connection, group_id, operator_id)
+                operator_name = operator_info.get("nickname") if operator_info and operator_info.get("nickname") else str(operator_id)
+                if user_id == self_id:
+                    if sub_type == "invite":
+                        text = f"（你）被 {operator_name} 邀请加入"
+                    elif sub_type == "approve":
+                        text = f"（你）通过 {operator_name} 审批加入"
+                    else:
+                        text = f"（你）加入群（方式: {sub_type}）"
+                else:
+                    if sub_type == "invite":
+                        text = f"被 {operator_name} 邀请加入"
+                    elif sub_type == "approve":
+                        text = f"通过 {operator_name} 审批加入"
+                    else:
+                        text = f"加入群（方式: {sub_type}）"
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
+            case "group_decrease":
+                sub_type = raw_message.get("sub_type")
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                operator_id = raw_message.get("operator_id")
+                self_id = raw_message.get("self_id")
+                member_info = await get_stranger_info(self.server_connection, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                operator_name = "系统"
+                if operator_id and operator_id != 0:
+                    operator_info = await get_member_info(self.server_connection, group_id, operator_id)
+                    if operator_info and operator_info.get("nickname"):
+                        operator_name = operator_info.get("nickname")
+                    else:
+                        operator_name = str(operator_id)
+                if user_id == self_id:
+                    if sub_type == "leave":
+                        text = "（你）退出了群"
+                    elif sub_type == "kick":
+                        text = f"（你）被 {operator_name} 移出"
+                    else:
+                        text = f"（你）离开群（方式: {sub_type}）"
+                else:
+                    if sub_type == "leave":
+                        text = f"退出了群"
+                    elif sub_type == "kick":
+                        text = f"被 {operator_name} 移出"
+                    else:
+                        text = f"离开群（方式: {sub_type}）"
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
             case _:
                 logger.warning(f"不支持的notice类型: {notice_type}")
                 return None
@@ -261,6 +358,7 @@ class NoticeHandler:
             return None, None
 
         # 计算user_info
+        self_id = raw_message.get("self_id")
         operator_id = raw_message.get("operator_id")
         operator_nickname: str = None
         operator_cardname: str = None
@@ -323,7 +421,7 @@ class NoticeHandler:
         fetched_group_info = await get_group_info(self.server_connection, group_id)
         group_name = fetched_group_info.get("group_name") if fetched_group_info else None
 
-        # 永久禁言或全体禁言时不显示时间
+        # 全体禁言时不显示时间
         if duration == -1 or user_id == 0:
             human_time = ""
         else:
@@ -345,9 +443,14 @@ class NoticeHandler:
 
             human_time = " ".join(parts) if parts else "0 秒"
 
-        display_target = banned_user_info.user_nickname if banned_user_info else "全体成员"
+        display_target = banned_user_info.user_nickname if banned_user_info else None
 
-        if human_time:
+        if user_id == self_id:
+            display_target = f"{display_target} (我)"
+
+        if user_id == 0:
+            text_str = "全体禁言"
+        elif human_time:
             text_str = f"禁言了 {display_target}（{human_time}）"
         else:
             text_str = f"禁言了 {display_target}"
@@ -366,6 +469,7 @@ class NoticeHandler:
             return None, None
 
         # 计算user_info
+        self_id = raw_message.get("self_id")
         operator_id = raw_message.get("operator_id")
         operator_nickname: str = None
         operator_cardname: str = None
@@ -435,8 +539,13 @@ class NoticeHandler:
         # 可读 text 段
         fetched_group_info = await get_group_info(self.server_connection, group_id)
         group_name = fetched_group_info.get("group_name") if fetched_group_info else None
-        display_target = lifted_user_info.user_nickname if lifted_user_info else "全体成员"
-        text_str = f"解除禁言：{display_target}"
+        display_target = lifted_user_info.user_nickname if lifted_user_info else None
+        if display_target and user_id == self_id:
+            display_target = f"{display_target} (我)"
+        if not display_target:
+            text_str = "全体解禁"
+        else:
+            text_str = f"{display_target} 已被解除禁言"
         text_seg = Seg(type="text", data=text_str)
         notify_seg = seg_data
         return Seg(type="seglist", data=[notify_seg, text_seg]), operator_info
@@ -458,9 +567,14 @@ class NoticeHandler:
                 user_id = lift_record.user_id
 
                 # 防御：防止同一用户重复自然解除
-                if any(r.user_id == user_id and r.group_id == group_id for r in self.lifted_list):
-                     logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
-                     continue
+                for record in list(self.lifted_list):
+                    if record.user_id == user_id and record.group_id == group_id:
+                        logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
+                        continue
+
+                # 跳过全体禁言记录
+                if lift_record.user_id == 0 or lift_record.lift_time == -1:
+                    continue
 
                 db_manager.delete_ban_record(lift_record)  # 从数据库中删除禁言记录
 
@@ -482,12 +596,7 @@ class NoticeHandler:
                     platform=global_config.maibot_server.platform_name,
                     message_id="notice",
                     time=time.time(),
-                    user_info=UserInfo(        # 自然解除禁言没有操作者
-                           platform=global_config.maibot_server.platform_name,
-                           user_id=0,
-                           user_nickname="",   # 这里留空
-                           user_cardname=None,
-                     ),
+                    user_info=None,      # 自然解除禁言没有操作者
                     group_info=group_info,
                     template_info=None,
                     format_info=None,
@@ -534,10 +643,6 @@ class NoticeHandler:
             user_nickname = fetched_member_info.get("nickname")
             user_cardname = fetched_member_info.get("card")
 
-        # 防止 nickname 为空字符串
-        if not user_nickname or not user_nickname.strip():
-            user_nickname = "QQ用户"
-
         lifted_user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
             user_id=user_id,
@@ -554,7 +659,7 @@ class NoticeHandler:
                 "lifted_user_info": lifted_user_info.to_dict(),
             },
         )
-        text_seg = Seg(type="text", data=f"{user_nickname} 已自然解除禁言")
+        text_seg = Seg(type="text", data=f"系统解除 {user_nickname} 的禁言")
         return Seg(type="seglist", data=[notify_seg, text_seg])
 
     async def auto_lift_detect(self) -> None:
@@ -566,12 +671,14 @@ class NoticeHandler:
                 if ban_record.user_id == 0 or ban_record.lift_time == -1:
                     continue
                 if ban_record.lift_time <= int(time.time()):
-                    # 触发自然解除禁言
-                    logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
+                    if ban_record.user_id == self_id:
+                        logger.info(f"检测到 Bot 自身在群 {ban_record.group_id} 的禁言已解除")
+                        await self.handle_self_mute_lift(ban_record.group_id)
+                    else:
+                        logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
                     self.lifted_list.append(ban_record)
                     self.banned_list.remove(ban_record)
             await asyncio.sleep(5)
-
 
     async def send_notice(self) -> None:
         """
