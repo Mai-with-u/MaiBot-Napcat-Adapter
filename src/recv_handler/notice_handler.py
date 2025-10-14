@@ -115,7 +115,32 @@ class NoticeHandler:
                             user_id, group_id, False, False
                         ):
                             logger.info("处理戳一戳消息")
-                            handled_message, user_info = await self.handle_poke_notify(raw_message, group_id, user_id)
+                            handled_message, user_info, is_target_self = await self.handle_poke_notify(
+                                raw_message, group_id, user_id
+                            )
+                            if handled_message and user_info:
+                                if is_target_self:
+                                    await message_send_instance.message_send(
+                                        MessageBase(
+                                            message_info=BaseMessageInfo(
+                                                platform=global_config.maibot_server.platform_name,
+                                                message_id="poke",
+                                                time=time.time(),
+                                                user_info=user_info,
+                                                group_info=None,
+                                                template_info=None,
+                                                format_info=FormatInfo(
+                                                    content_format=["text"],
+                                                    accept_format=ACCEPT_FORMAT,
+                                                ),
+                                            ),
+                                            message_segment=handled_message,
+                                            raw_message=json.dumps(raw_message),
+                                        )
+                                    )
+                                    return
+                                else:
+                                    logger.info("忽略其他事件")
                         else:
                             logger.warning("戳一戳消息被禁用，取消戳一戳处理")
                     case _:
@@ -287,70 +312,53 @@ class NoticeHandler:
     ) -> Tuple[Seg | None, UserInfo | None]:
         # sourcery skip: merge-comparisons, merge-duplicate-blocks, remove-redundant-if, remove-unnecessary-else, swap-if-else-branches
         self_info: dict = await get_self_info(self.server_connection)
-
         if not self_info:
             logger.error("自身信息获取失败")
             return None, None
 
         self_id = raw_message.get("self_id")
         target_id = raw_message.get("target_id")
-        target_name: str = None
         raw_info: list = raw_message.get("raw_info")
 
         if group_id:
             user_qq_info: dict = await get_member_info(self.server_connection, group_id, user_id)
         else:
             user_qq_info: dict = await get_stranger_info(self.server_connection, user_id)
-        if user_qq_info:
-            user_name = user_qq_info.get("nickname")
-            user_cardname = user_qq_info.get("card")
+
+        user_name = user_qq_info.get("nickname") if user_qq_info and user_qq_info.get("nickname") else "QQ用户"
+        user_cardname = user_qq_info.get("card") if user_qq_info else None
+
+        if target_id == self_id:
+            # 别人戳我 → 触发回应
+            display_name = user_name
+            target_name = self_info.get("nickname") or "我"
+
+            first_txt: str = "戳了戳"
+            second_txt: str = ""
+            try:
+                first_txt = raw_info[2].get("txt", "戳了戳")
+                second_txt = raw_info[4].get("txt", "")
+            except Exception as e:
+                logger.warning(f"解析戳一戳消息失败: {str(e)}，将使用默认文本")
+
+            text_str = f"{display_name}{first_txt}{target_name}{second_txt}（这是QQ的一个功能，用于提及某人，但没那么明显）"
+            seg_data: Seg = Seg(type="text", data=text_str)
+
+            user_info: UserInfo = UserInfo(
+                platform=global_config.maibot_server.platform_name,
+                user_id=user_id,
+                user_nickname=user_name,
+                user_cardname=user_cardname,
+            )
+            return seg_data, user_info, True
+
+        elif user_id == self_id:
+            # bot戳别人 → 忽略，防止循环
+            return None, None, False
+
         else:
-            user_name = "QQ用户"
-            user_cardname = "QQ用户"
-            logger.info("无法获取戳一戳对方的用户昵称")
-
-        # 计算Seg
-        if self_id == target_id:
-            display_name = ""
-            target_name = self_info.get("nickname")
-
-        elif self_id == user_id:
-            # 让ada不发送麦麦戳别人的消息
-            return None, None
-
-        else:
-            # 老实说这一步判定没啥意义，毕竟私聊是没有其他人之间的戳一戳，但是感觉可以有这个判定来强限制群聊环境
-            if group_id:
-                fetched_member_info: dict = await get_member_info(self.server_connection, group_id, target_id)
-                if fetched_member_info:
-                    target_name = fetched_member_info.get("nickname")
-                else:
-                    target_name = "QQ用户"
-                    logger.info("无法获取被戳一戳方的用户昵称")
-                display_name = user_name
-            else:
-                return None, None
-
-        first_txt: str = "戳了戳"
-        second_txt: str = ""
-        try:
-            first_txt = raw_info[2].get("txt", "戳了戳")
-            second_txt = raw_info[4].get("txt", "")
-        except Exception as e:
-            logger.warning(f"解析戳一戳消息失败: {str(e)}，将使用默认文本")
-
-        user_info: UserInfo = UserInfo(
-            platform=global_config.maibot_server.platform_name,
-            user_id=user_id,
-            user_nickname=user_name,
-            user_cardname=user_cardname,
-        )
-
-        seg_data: Seg = Seg(
-            type="text",
-            data=f"{display_name}{first_txt}{target_name}{second_txt}（这是QQ的一个功能，用于提及某人，但没那么明显）",
-        )
-        return seg_data, user_info
+            # 群内用户互戳、私聊他人戳他人 → 忽略
+            return None, None, False
 
     async def handle_ban_notify(self, raw_message: dict, group_id: int) -> Tuple[Seg, UserInfo] | Tuple[None, None]:
         if not group_id:
@@ -596,7 +604,7 @@ class NoticeHandler:
                     platform=global_config.maibot_server.platform_name,
                     message_id="notice",
                     time=time.time(),
-                    user_info=None,      # 自然解除禁言没有操作者
+                    user_info=None,  # 自然解除禁言没有操作者
                     group_info=group_info,
                     template_info=None,
                     format_info=None,
@@ -643,6 +651,11 @@ class NoticeHandler:
             user_nickname = fetched_member_info.get("nickname")
             user_cardname = fetched_member_info.get("card")
 
+        self_info = await get_self_info(self.server_connection)
+        self_id = self_info.get("user_id") if self_info else None
+        if self_id and user_id == self_id:
+            user_nickname = f"{user_nickname} (我)"
+        
         lifted_user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
             user_id=user_id,
@@ -664,6 +677,8 @@ class NoticeHandler:
 
     async def auto_lift_detect(self) -> None:
         while True:
+            self_info = await get_self_info(self.server_connection)
+            self_id = self_info.get("user_id") if self_info else None
             if len(self.banned_list) == 0:
                 await asyncio.sleep(5)
                 continue
@@ -673,7 +688,8 @@ class NoticeHandler:
                 if ban_record.lift_time <= int(time.time()):
                     if ban_record.user_id == self_id:
                         logger.info(f"检测到 Bot 自身在群 {ban_record.group_id} 的禁言已解除")
-                        await self.handle_self_mute_lift(ban_record.group_id)
+                        if hasattr(self, "handle_self_mute_lift"):
+                            await self.handle_self_mute_lift(ban_record.group_id)
                     else:
                         logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
                     self.lifted_list.append(ban_record)
@@ -685,30 +701,37 @@ class NoticeHandler:
         发送通知消息到Napcat
         """
         while True:
-            if not unsuccessful_notice_queue.empty():
-                to_be_send: MessageBase = await unsuccessful_notice_queue.get()
+            try:
+                if not unsuccessful_notice_queue.empty():
+                    to_be_send: MessageBase = await unsuccessful_notice_queue.get()
+                    try:
+                        send_status = await message_send_instance.message_send(to_be_send)
+                        if send_status:
+                            unsuccessful_notice_queue.task_done()
+                        else:
+                            await unsuccessful_notice_queue.put(to_be_send)
+                    except Exception as e:
+                        logger.error(f"发送通知消息失败: {str(e)}")
+                        await unsuccessful_notice_queue.put(to_be_send)
+                    await asyncio.sleep(1)
+                    continue
+                to_be_send: MessageBase = await notice_queue.get()
                 try:
                     send_status = await message_send_instance.message_send(to_be_send)
                     if send_status:
-                        unsuccessful_notice_queue.task_done()
+                        notice_queue.task_done()
                     else:
                         await unsuccessful_notice_queue.put(to_be_send)
                 except Exception as e:
                     logger.error(f"发送通知消息失败: {str(e)}")
                     await unsuccessful_notice_queue.put(to_be_send)
                 await asyncio.sleep(1)
-                continue
-            to_be_send: MessageBase = await notice_queue.get()
-            try:
-                send_status = await message_send_instance.message_send(to_be_send)
-                if send_status:
-                    notice_queue.task_done()
-                else:
-                    await unsuccessful_notice_queue.put(to_be_send)
+            except asyncio.CancelledError:
+                logger.warning("send_notice 任务被取消，安全退出循环")
+                break
             except Exception as e:
-                logger.error(f"发送通知消息失败: {str(e)}")
-                await unsuccessful_notice_queue.put(to_be_send)
-            await asyncio.sleep(1)
+                logger.error(f"通知循环出现异常: {e}")
+                await asyncio.sleep(3)
 
 
 notice_handler = NoticeHandler()
