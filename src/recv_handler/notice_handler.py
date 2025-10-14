@@ -120,6 +120,15 @@ class NoticeHandler:
                             )
                             if handled_message and user_info:
                                 if is_target_self:
+                                    send_group_info = None
+                                    if group_id:
+                                        fetched_group_info = await get_group_info(self.server_connection, group_id)
+                                        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+                                        send_group_info = GroupInfo(
+                                            platform=global_config.maibot_server.platform_name,
+                                            group_id=group_id,
+                                            group_name=group_name,
+                                        )
                                     await message_send_instance.message_send(
                                         MessageBase(
                                             message_info=BaseMessageInfo(
@@ -127,7 +136,7 @@ class NoticeHandler:
                                                 message_id="poke",
                                                 time=time.time(),
                                                 user_info=user_info,
-                                                group_info=None,
+                                                group_info=send_group_info,
                                                 template_info=None,
                                                 format_info=FormatInfo(
                                                     content_format=["text"],
@@ -341,7 +350,7 @@ class NoticeHandler:
             except Exception as e:
                 logger.warning(f"解析戳一戳消息失败: {str(e)}，将使用默认文本")
 
-            text_str = f"{display_name}{first_txt}{target_name}{second_txt}（这是QQ的一个功能，用于提及某人，但没那么明显）"
+            text_str = f"{first_txt}{target_name}{second_txt}（这是QQ的一个功能，用于提及某人，但没那么明显）"
             seg_data: Seg = Seg(type="text", data=text_str)
 
             user_info: UserInfo = UserInfo(
