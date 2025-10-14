@@ -360,7 +360,7 @@ class MessageHandler:
                             gift = meta.get("giftData", {})
                             gift_name = gift.get("giftName", "未知礼物")
                             gift_msg = gift.get("giftMsg", "")
-                            seg_message.append(Seg(type="text", data=f"[礼物卡片] {gift_name}：{gift_msg}"))
+                            seg_message.append(Seg(type="text", data=f"[收到礼物] {gift_name}：{gift_msg}"))
 
                         # 推荐联系人
                         elif app_name == "com.tencent.contact.lua":
@@ -376,13 +376,6 @@ class MessageHandler:
                             tag = contact_info.get("tag", "推荐群聊")
                             seg_message.append(Seg(type="text", data=f"[{tag}] {name}"))
 
-                        # QQ小程序卡片
-                        elif app_name == "com.tencent.miniapp_01":
-                            detail = meta.get("detail_1", {})
-                            title = detail.get("title", "未知小程序")
-                            desc = detail.get("desc", "")
-                            seg_message.append(Seg(type="text", data=f"[QQ小程序] {title}：{desc}"))
-
                         # 图文分享（如 哔哩哔哩、网页）
                         elif app_name == "com.tencent.tuwen.lua":
                             news = meta.get("news", {})
@@ -390,12 +383,55 @@ class MessageHandler:
                             desc = news.get("desc", "")
                             tag = news.get("tag") or "图文分享"
                             seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                        
+                        # QQ小程序分享（含预览图）
+                        elif app_name == "com.tencent.miniapp_01":
+                            detail = meta.get("detail_1", {})
+                            title = detail.get("title", "未知小程序")
+                            desc = detail.get("desc", "")
+                            preview_url = detail.get("preview", "")
+                            tag = "QQ小程序"
 
-                        # QQ收藏分享
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+
+                            if preview_url:
+                                try:
+                                    image_base64 = await get_image_base64(preview_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"QQ小程序卡片图片下载失败: {e}")
+
+                        # QQ收藏分享（含预览图）
                         elif app_name == "com.tencent.template.qqfavorite.share":
                             news = meta.get("news", {})
-                            desc = news.get("desc", "")
-                            seg_message.append(Seg(type="text", data=f"[QQ收藏] {desc}"))
+                            desc = news.get("desc", "").replace("[图片]", "").strip()
+                            preview_url = news.get("preview", "")
+                            tag = news.get("tag", "QQ收藏")
+
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {desc}"))
+
+                            if preview_url:
+                                try:
+                                    image_base64 = await get_image_base64(preview_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"QQ收藏图片下载失败: {e}")
+
+                        # QQ空间分享（含预览图）
+                        elif app_name == "com.tencent.miniapp.lua":
+                            miniapp = meta.get("miniapp", {})
+                            title = miniapp.get("title", "未知标题")
+                            tag = miniapp.get("tag", "QQ空间")
+                            preview_url = miniapp.get("preview", "")
+
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}"))
+
+                            if preview_url:
+                                try:
+                                    image_base64 = await get_image_base64(preview_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"QQ空间分享卡片图片下载失败: {e}")
 
                         # QQ地图位置分享
                         elif app_name == "com.tencent.map":
@@ -403,6 +439,13 @@ class MessageHandler:
                             name = location.get("name", "未知地点")
                             address = location.get("address", "")
                             seg_message.append(Seg(type="text", data=f"[位置] {address} · {name}"))
+
+                        # QQ一起听歌
+                        elif app_name == "com.tencent.together":
+                            invite = (meta or {}).get("invite", {})
+                            title = invite.get("title") or "一起听歌"
+                            summary = invite.get("summary") or ""
+                            seg_message.append(Seg(type="text", data=f"[{title}] {summary}"))
 
                         # 通用匹配（包括 music.lua、tuwen.lua 等）
                         elif app_name:
