@@ -95,6 +95,32 @@ async def get_member_info(websocket: Server.ServerConnection, group_id: int, use
     return socket_response.get("data")
 
 
+async def get_group_member_list(websocket: Server.ServerConnection, group_id: int) -> list | None:
+    """
+    获取群成员列表
+
+    返回值需要处理可能为空的情况
+    """
+    logger.debug(f"获取群成员列表中，群号: {group_id}")
+    request_uuid = str(uuid.uuid4())
+    payload = json.dumps({
+        "action": "get_group_member_list",
+        "params": {"group_id": group_id, "no_cache": False},
+        "echo": request_uuid,
+    })
+    try:
+        await websocket.send(payload)
+        socket_response: dict = await get_response(request_uuid, 30)
+    except TimeoutError:
+        logger.error(f"获取群成员列表超时，群号: {group_id}")
+        return None
+    except Exception as e:
+        logger.error(f"获取群成员列表失败: {e}")
+        return None
+    logger.debug(socket_response)
+    return socket_response.get("data")
+
+
 async def get_image_base64(url: str) -> str:
     # sourcery skip: raise-specific-error
     """获取图片/表情包的Base64"""
