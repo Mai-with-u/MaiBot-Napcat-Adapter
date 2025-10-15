@@ -14,6 +14,7 @@ from maim_message import FormatInfo, UserInfo, GroupInfo, Seg, BaseMessageInfo, 
 
 from src.utils import (
     get_group_info,
+    get_group_member_list, 
     get_member_info,
     get_self_info,
     get_stranger_info,
@@ -114,7 +115,7 @@ class NoticeHandler:
                         if global_config.chat.enable_poke and await message_handler.check_allow_to_chat(
                             user_id, group_id, False, False
                         ):
-                            logger.info("处理戳一戳消息")
+                            logger.info("处理戳了戳消息")
                             handled_message, user_info, is_target_self = await self.handle_poke_notify(
                                 raw_message, group_id, user_id
                             )
@@ -155,7 +156,7 @@ class NoticeHandler:
                                     logger.info("忽略其他事件")
                                     return
                         else:
-                            logger.warning("戳一戳消息被禁用，取消戳一戳处理")
+                            logger.warning("戳了戳消息被禁用，取消戳了戳处理")
                             return
                     case _:
                         logger.warning(f"不支持的notify类型: {notice_type}.{sub_type}")
@@ -312,6 +313,33 @@ class NoticeHandler:
                     platform=global_config.maibot_server.platform_name,
                     user_id=user_id,
                     user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
+            case "essence":
+                group_id = raw_message.get("group_id")
+                sub_type = raw_message.get("sub_type")
+                message_id = raw_message.get("message_id")
+                operator_id = raw_message.get("operator_id")
+                operator_name = "系统"
+                if operator_id and operator_id != 0:
+                    operator_info = await get_member_info(self.server_connection, group_id, operator_id)
+                    if operator_info:
+                        operator_name = (
+                            operator_info.get("nickname")
+                            or operator_info.get("card")
+                            or str(operator_id)
+                        )
+                if sub_type == "add":
+                    text = f"{operator_name} 将 一条消息（ID: {message_id}）设为精华"
+                else:
+                    text = f"精华消息事件：{sub_type}"
+                logger.info(f"群 {group_id} 消息（ID: {message_id}）被 {operator_id} 设为精华")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=operator_id,
+                    user_nickname=operator_name,
                     user_cardname=None,
                 )
                 system_notice = True
@@ -493,7 +521,6 @@ class NoticeHandler:
             hours = (duration % 86400) // 3600
             mins = (duration % 3600) // 60
             secs = duration % 60
-
             parts = []
             if days > 0:
                 parts.append(f"{days} 天")
@@ -503,7 +530,6 @@ class NoticeHandler:
                 parts.append(f"{mins} 分钟")
             if secs > 0:
                 parts.append(f"{secs} 秒")
-
             human_time = " ".join(parts) if parts else "0 秒"
 
         display_target = banned_user_info.user_nickname if banned_user_info else None
@@ -759,8 +785,6 @@ class NoticeHandler:
                 if ban_record.lift_time <= int(time.time()):
                     if ban_record.user_id == self_id:
                         logger.info(f"检测到 Bot 自身在群 {ban_record.group_id} 的禁言已解除")
-                        if hasattr(self, "handle_self_mute_lift"):
-                            await self.handle_self_mute_lift(ban_record.group_id)
                     else:
                         logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
                     self.lifted_list.append(ban_record)
