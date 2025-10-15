@@ -107,7 +107,7 @@ class NoticeHandler:
                             if status_text:
                                 logger.info(f"用户 {user_id} {status_text}")
                             else:
-                                status_map = {1: "正在输入中", 2: "已清空聊天框内容"}
+                                status_map = {1: "正在输入中", 2: "已刷新聊天页面"}
                                 logger.info(f"用户 {user_id} {status_map.get(event_type, '输入状态变更')}")
                         return
                     case NoticeType.Notify.poke:
@@ -118,6 +118,9 @@ class NoticeHandler:
                             handled_message, user_info, is_target_self = await self.handle_poke_notify(
                                 raw_message, group_id, user_id
                             )
+                            # 提前过滤事件（bot戳别人/别人戳别人）
+                            if not handled_message or not user_info:
+                                return
                             if handled_message and user_info:
                                 if is_target_self:
                                     send_group_info = None
@@ -150,8 +153,10 @@ class NoticeHandler:
                                     return
                                 else:
                                     logger.info("忽略其他事件")
+                                    return
                         else:
                             logger.warning("戳一戳消息被禁用，取消戳一戳处理")
+                            return
                     case _:
                         logger.warning(f"不支持的notify类型: {notice_type}.{sub_type}")
             case NoticeType.group_ban:
@@ -176,22 +181,46 @@ class NoticeHandler:
                 group_id = raw_message.get("group_id")
                 user_id = raw_message.get("user_id")
                 self_id = raw_message.get("self_id")
-                member_info = await get_member_info(self.server_connection, group_id, user_id)
-                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
-                if user_id == self_id:
+                if user_id and user_id != 0:
+                    member_info = await get_member_info(self.server_connection, group_id, user_id)
+                    nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                else:
+                    nickname = "系统"
+                if user_id == 0:
+                    try:
+                        member_list = await get_group_member_list(self.server_connection, group_id)
+                        if member_list and isinstance(member_list, list):
+                            owner = next((m for m in member_list if m.get("role") == "owner"), None)
+                            if owner:
+                                owner_id = owner.get("user_id")
+                                owner_name = owner.get("nickname") or owner.get("card") or str(owner.get("user_id"))
+                                text = f"群主变更为 {owner_name}"
+                                logger.info(f"群 {group_id} 群主变更为 {owner_id}")
+                            else:
+                                text = "群主变更"
+                                logger.error(f"群 {group_id} 群主变更（未找到新群主）")
+                        else:
+                            text = "群主变更"
+                            logger.error(f"群 {group_id} 查询群成员列表失败")
+                    except Exception as e:
+                        text = "群主变更"
+                        logger.error(f"群 {group_id} 查询新群主失败: {e}")
+                elif user_id == self_id:
                     if sub_type == "set":
                         text = "（你）被设置为管理员"
                     elif sub_type == "unset":
                         text = "（你）被取消管理员"
                     else:
                         text = f"管理员状态变更: {sub_type}"
+                    logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
                 else:
                     if sub_type == "set":
-                        text = f"被设置为管理员"
+                        text = "被设置为管理员"
                     elif sub_type == "unset":
-                        text = f"被取消管理员"
+                        text = "被取消管理员"
                     else:
                         text = f"管理员状态变更: {sub_type}"
+                    logger.info(f"群 {group_id} 用户 {user_id} {text}")
                 handled_message = Seg(type="text", data=text)
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
@@ -208,22 +237,33 @@ class NoticeHandler:
                 self_id = raw_message.get("self_id")
                 member_info = await get_member_info(self.server_connection, group_id, user_id)
                 nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
-                operator_info = await get_member_info(self.server_connection, group_id, operator_id)
-                operator_name = operator_info.get("nickname") if operator_info and operator_info.get("nickname") else str(operator_id)
+                operator_name = "系统"
+                if operator_id and operator_id != 0:
+                    operator_info = await get_member_info(self.server_connection, group_id, operator_id)
+                    if operator_info and operator_info.get("nickname"):
+                        operator_name = operator_info.get("nickname")
+                    else:
+                        operator_name = str(operator_id)
                 if user_id == self_id:
                     if sub_type == "invite":
                         text = f"（你）被 {operator_name} 邀请加入"
+                        logger.info(f"群 {group_id} Bot被 {operator_id} 邀请加入")
                     elif sub_type == "approve":
                         text = f"（你）通过 {operator_name} 审批加入"
+                        logger.info(f"群 {group_id} Bot通过 {operator_id} 审批加入")
                     else:
                         text = f"（你）加入群（方式: {sub_type}）"
+                        logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
                 else:
                     if sub_type == "invite":
                         text = f"被 {operator_name} 邀请加入"
+                        logger.info(f"群 {group_id} 用户 {user_id} 被 {operator_id} 邀请加入")
                     elif sub_type == "approve":
                         text = f"通过 {operator_name} 审批加入"
+                        logger.info(f"群 {group_id} 用户 {user_id} 被 {operator_id} 审批加入")
                     else:
                         text = f"加入群（方式: {sub_type}）"
+                        logger.info(f"群 {group_id} 用户 {user_id} {text}")
                 handled_message = Seg(type="text", data=text)
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
@@ -247,13 +287,18 @@ class NoticeHandler:
                         operator_name = operator_info.get("nickname")
                     else:
                         operator_name = str(operator_id)
-                if user_id == self_id:
+                if sub_type == "disband":
+                    nickname = operator_name
+                    text = "群已被解散"
+                    logger.info(f"群 {group_id} 已被 {operator_id} 解散")
+                elif user_id == self_id:
                     if sub_type == "leave":
                         text = "（你）退出了群"
                     elif sub_type == "kick":
                         text = f"（你）被 {operator_name} 移出"
                     else:
                         text = f"（你）离开群（方式: {sub_type}）"
+                    logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
                 else:
                     if sub_type == "leave":
                         text = f"退出了群"
@@ -261,6 +306,7 @@ class NoticeHandler:
                         text = f"被 {operator_name} 移出"
                     else:
                         text = f"离开群（方式: {sub_type}）"
+                    logger.info(f"群 {group_id} 用户 {user_id} {text}")
                 handled_message = Seg(type="text", data=text)
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
@@ -464,13 +510,19 @@ class NoticeHandler:
 
         if user_id == self_id:
             display_target = f"{display_target} (我)"
+            user = "Bot"
+        else:
+            user = f"用户 {user_id}"
 
         if user_id == 0:
-            text_str = "全体禁言"
+            text_str = "开启了群禁言"
+            logger.info(f"群 {group_id} {text_str}")
         elif human_time:
             text_str = f"禁言了 {display_target}（{human_time}）"
+            logger.info(f"群 {group_id} {user} 被 {operator_id} 禁言（{human_time}）")
         else:
             text_str = f"禁言了 {display_target}"
+            logger.info(f"群 {group_id} {user} 被 {operator_id} 禁言")
 
         text_seg = Seg(type="text", data=text_str)
 
@@ -560,9 +612,11 @@ class NoticeHandler:
         if display_target and user_id == self_id:
             display_target = f"{display_target} (我)"
         if not display_target:
-            text_str = "全体解禁"
+            text_str = "解除了群禁言"
+            logger.info(f"群 {group_id} {text_str}")
         else:
             text_str = f"{display_target} 已被解除禁言"
+            logger.info(f"群 {group_id} 已解除 {user_id} 的禁言")
         text_seg = Seg(type="text", data=text_str)
         notify_seg = seg_data
         return Seg(type="seglist", data=[notify_seg, text_seg]), operator_info
@@ -609,11 +663,18 @@ class NoticeHandler:
                     group_name=group_name,
                 )
 
+                system_user = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=0,
+                    user_nickname="系统",
+                    user_cardname=None,
+                )
+                
                 message_info: BaseMessageInfo = BaseMessageInfo(
                     platform=global_config.maibot_server.platform_name,
                     message_id="notice",
                     time=time.time(),
-                    user_info=None,  # 自然解除禁言没有操作者
+                    user_info=system_user,  # 自然解除禁言没有操作者
                     group_info=group_info,
                     template_info=None,
                     format_info=None,
@@ -681,7 +742,8 @@ class NoticeHandler:
                 "lifted_user_info": lifted_user_info.to_dict(),
             },
         )
-        text_seg = Seg(type="text", data=f"系统解除 {user_nickname} 的禁言")
+        text_seg = Seg(type="text", data=f"解除了 {user_nickname} 的禁言")
+        logger.info(f"群 {group_id} 用户 {user_id} 的禁言被系统解除")
         return Seg(type="seglist", data=[notify_seg, text_seg])
 
     async def auto_lift_detect(self) -> None:
