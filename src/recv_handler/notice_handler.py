@@ -295,19 +295,23 @@ class NoticeHandler:
                 elif user_id == self_id:
                     if sub_type == "leave":
                         text = "（你）退出了群"
+                        logger.info(f"群 {group_id} Bot退出了群")
                     elif sub_type == "kick":
                         text = f"（你）被 {operator_name} 移出"
+                        logger.info(f"群 {group_id} Bot被 {operator_id} 移出")
                     else:
                         text = f"（你）离开群（方式: {sub_type}）"
-                    logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
+                        logger.info(f"群 {group_id} Bot离开群（方式: {sub_type}）")
                 else:
                     if sub_type == "leave":
                         text = f"退出了群"
+                        logger.info(f"群 {group_id} 用户 {user_id} {text}")
                     elif sub_type == "kick":
                         text = f"被 {operator_name} 移出"
+                        logger.info(f"群 {group_id} 用户 {user_id} 被 {operator_id} 移出")
                     else:
                         text = f"离开群（方式: {sub_type}）"
-                    logger.info(f"群 {group_id} 用户 {user_id} {text}")
+                        logger.info(f"群 {group_id} 用户 {user_id} {text}")
                 handled_message = Seg(type="text", data=text)
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
