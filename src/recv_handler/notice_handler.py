@@ -401,7 +401,7 @@ class NoticeHandler:
 
         user_name = user_qq_info.get("nickname") if user_qq_info and user_qq_info.get("nickname") else "QQ用户"
         user_cardname = user_qq_info.get("card") if user_qq_info else None
-        target_name = target_qq_info.get("nickname") if target_qq_info and target_qq_info.get("nickname") else "未知目标"
+        target_name = target_qq_info.get("nickname") if target_qq_info and target_qq_info.get("nickname") else "QQ用户"
 
         # 解析 raw_info 文本
         text_str = ""
@@ -420,34 +420,34 @@ class NoticeHandler:
             text_str = ""
 
         # 智能识别动作 (仅允许 X了X 三字结构)
-        action_match = re.search(r"[\u4e00-\u9fa5]{1,3}了[\u4e00-\u9fa5]{1,3}", text_str)
-        action = "拍了拍"
+        match_list = re.findall(r"[\u4e00-\u9fa5]了[\u4e00-\u9fa5]", text_str)
         has_action = False
-        if action_match:
-            candidate = action_match.group(0)
-            # 严格限定为 X了X 三字结构
-            if re.match(r"^[\u4e00-\u9fa5]了[\u4e00-\u9fa5]$", candidate):
-                action = candidate
-                has_action = True
-            else:
-                has_action = False
+        if match_list:
+            action = match_list[0]  # 取第一个 X了X
+            has_action = True
+        else:
+            action = "拍了拍"  # 默认 fallback
 
-        # 去除动作部分文本
+        # 若存在动作，从原文中移除它（防止重复）
         if has_action:
-            text_str = text_str.replace(action, "").strip()
+            text_str = text_str.replace(action, "", 1).strip()
 
-        # ---------------------
-        # 提取描述性后缀
-        # ---------------------
-        suffix = ""
-        if text_str:
-            suffix = text_str
+        # 提取描述性后缀（动作之后的内容）
+        suffix = text_str.strip() if text_str else ""
 
-        # ---------------------
+        # 检查句式是否已经反转（例如 “A: A...”）
+        prefix_wrong = False
+        if re.match(rf"^{re.escape(user_name)}[:：]", suffix) or suffix.startswith(user_name):
+            prefix_wrong = True
+
         # 生成标准格式句子
-        # ---------------------
-        text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}".strip()
-        text_str = text_str.replace("  ", " ")
+        if prefix_wrong:
+            text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}"
+        else:
+            # 正常句式
+            text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}"
+
+        text_str = text_str.replace("  ", " ").strip()
 
         # 构造消息段和用户信息
         seg_data: Seg = Seg(type="text", data=text_str)
