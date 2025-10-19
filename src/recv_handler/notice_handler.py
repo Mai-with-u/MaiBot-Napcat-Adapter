@@ -115,49 +115,11 @@ class NoticeHandler:
                         if global_config.chat.enable_poke and await message_handler.check_allow_to_chat(
                             user_id, group_id, False, False
                         ):
-                            logger.info("处理戳了戳消息")
-                            handled_message, user_info, is_target_self = await self.handle_poke_notify(
-                                raw_message, group_id, user_id
-                            )
-                            # 提前过滤事件（bot戳别人/别人戳别人）
-                            if not handled_message or not user_info:
-                                return
-                            if handled_message and user_info:
-                                if is_target_self:
-                                    send_group_info = None
-                                    if group_id:
-                                        fetched_group_info = await get_group_info(self.server_connection, group_id)
-                                        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
-                                        send_group_info = GroupInfo(
-                                            platform=global_config.maibot_server.platform_name,
-                                            group_id=group_id,
-                                            group_name=group_name,
-                                        )
-                                    await message_send_instance.message_send(
-                                        MessageBase(
-                                            message_info=BaseMessageInfo(
-                                                platform=global_config.maibot_server.platform_name,
-                                                message_id="poke",
-                                                time=time.time(),
-                                                user_info=user_info,
-                                                group_info=send_group_info,
-                                                template_info=None,
-                                                format_info=FormatInfo(
-                                                    content_format=["text"],
-                                                    accept_format=ACCEPT_FORMAT,
-                                                ),
-                                            ),
-                                            message_segment=handled_message,
-                                            raw_message=json.dumps(raw_message),
-                                        )
-                                    )
-                                    return
-                                else:
-                                    logger.info("忽略其他事件")
-                                    return
+                            logger.info("处理戳一戳消息")
+                            await self.handle_poke_notify(raw_message, group_id, user_id)
                         else:
-                            logger.warning("戳了戳消息被禁用，取消戳了戳处理")
-                            return
+                            logger.warning("戳一戳消息被禁用，取消戳一戳处理")
+                        return
                     case _:
                         logger.warning(f"不支持的notify类型: {notice_type}.{sub_type}")
             case NoticeType.group_ban:
@@ -347,6 +309,28 @@ class NoticeHandler:
                     user_cardname=None,
                 )
                 system_notice = True
+            case "group_card":
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                self_id = raw_message.get("self_id")
+                old_card = raw_message.get("card_old") or "(默认)"
+                new_card = raw_message.get("card_new") or "(默认)"
+                member_info = await get_member_info(self.server_connection, group_id, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
+                if user_id == self_id:
+                    text = f"（你）群卡片被修改为：{old_card} → {new_card}"
+                    logger.info(f"群 {group_id} Bot {user_id} 的群名片被修改为：{old_card} → {new_card}")
+                else:
+                    text = f"群卡片被修改为：{old_card} → {new_card}"
+                    logger.info(f"群 {group_id} 用户 {user_id} 的群名片被修改为：{old_card} → {new_card}")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=new_card,
+                )
+                system_notice = True
             case _:
                 logger.warning(f"不支持的notice类型: {notice_type}")
                 return None
@@ -409,43 +393,105 @@ class NoticeHandler:
 
         if group_id:
             user_qq_info: dict = await get_member_info(self.server_connection, group_id, user_id)
+            target_qq_info: dict = await get_member_info(self.server_connection, group_id, target_id)
         else:
             user_qq_info: dict = await get_stranger_info(self.server_connection, user_id)
+            target_qq_info: dict = await get_stranger_info(self.server_connection, target_id)
 
         user_name = user_qq_info.get("nickname") if user_qq_info and user_qq_info.get("nickname") else "QQ用户"
         user_cardname = user_qq_info.get("card") if user_qq_info else None
+        target_name = target_qq_info.get("nickname") if target_qq_info and target_qq_info.get("nickname") else "未知目标"
 
-        if target_id == self_id:
-            # 别人戳我 → 触发回应
-            display_name = user_name
-            target_name = self_info.get("nickname") or "我"
-
-            first_txt: str = "戳了戳"
-            second_txt: str = ""
+        # 解析 raw_info 文本
+        text_str = ""
+        if isinstance(raw_info, list) and len(raw_info) > 0:
             try:
-                first_txt = raw_info[2].get("txt", "戳了戳")
-                second_txt = raw_info[4].get("txt", "")
+                parts = []
+                for item in raw_info:
+                    if isinstance(item, dict):
+                        val = (item.get("txt") or item.get("name") or "").strip()
+                        if val and not all(ch in " \n\t" for ch in val):
+                            parts.append(val)
+                text_str = "".join(parts).strip()
             except Exception as e:
-                logger.warning(f"解析戳一戳消息失败: {str(e)}，将使用默认文本")
-
-            text_str = f"{first_txt}{target_name}{second_txt}（这是QQ的一个功能，用于提及某人，但没那么明显）"
-            seg_data: Seg = Seg(type="text", data=text_str)
-
-            user_info: UserInfo = UserInfo(
-                platform=global_config.maibot_server.platform_name,
-                user_id=user_id,
-                user_nickname=user_name,
-                user_cardname=user_cardname,
-            )
-            return seg_data, user_info, True
-
-        elif user_id == self_id:
-            # bot戳别人 → 忽略，防止循环
-            return None, None, False
-
+                logger.warning(f"原始 raw_info 解析失败: {e}")
         else:
-            # 群内用户互戳、私聊他人戳他人 → 忽略
-            return None, None, False
+            text_str = ""
+
+        # 智能识别动作 (仅允许 X了X 三字结构)
+        action_match = re.search(r"[\u4e00-\u9fa5]{1,3}了[\u4e00-\u9fa5]{1,3}", text_str)
+        action = "拍了拍"
+        has_action = False
+        if action_match:
+            candidate = action_match.group(0)
+            # 严格限定为 X了X 三字结构
+            if re.match(r"^[\u4e00-\u9fa5]了[\u4e00-\u9fa5]$", candidate):
+                action = candidate
+                has_action = True
+            else:
+                has_action = False
+
+        # 去除动作部分文本
+        if has_action:
+            text_str = text_str.replace(action, "").strip()
+
+        # ---------------------
+        # 提取描述性后缀
+        # ---------------------
+        suffix = ""
+        if text_str:
+            suffix = text_str
+
+        # ---------------------
+        # 生成标准格式句子
+        # ---------------------
+        text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}".strip()
+        text_str = text_str.replace("  ", " ")
+
+        # 构造消息段和用户信息
+        seg_data: Seg = Seg(type="text", data=text_str)
+        user_info: UserInfo = UserInfo(
+            platform=global_config.maibot_server.platform_name,
+            user_id=user_id,
+            user_nickname=user_name,
+            user_cardname=user_cardname,
+        )
+
+        # 提前过滤事件（空对象防御）
+        if not seg_data or not user_info:
+            return None, None
+
+        # 判断是否需要发送（别人戳Bot / Bot戳别人 / 别人戳别人）
+        send_group_info = None
+        if group_id:
+            fetched_group_info = await get_group_info(self.server_connection, group_id)
+            group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+            send_group_info = GroupInfo(
+                platform=global_config.maibot_server.platform_name,
+                group_id=group_id,
+                group_name=group_name,
+            )
+
+        await message_send_instance.message_send(
+            MessageBase(
+                message_info=BaseMessageInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    message_id="poke",
+                    time=time.time(),
+                    user_info=user_info,
+                    group_info=send_group_info,
+                    template_info=None,
+                    format_info=FormatInfo(
+                        content_format=["text"],
+                        accept_format=ACCEPT_FORMAT,
+                    ),
+                ),
+                message_segment=seg_data,
+                raw_message=json.dumps(raw_message),
+            )
+        )
+
+        return seg_data, user_info
 
     async def handle_ban_notify(self, raw_message: dict, group_id: int) -> Tuple[Seg, UserInfo] | Tuple[None, None]:
         if not group_id:
