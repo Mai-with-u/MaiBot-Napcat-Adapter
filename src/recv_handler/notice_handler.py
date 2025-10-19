@@ -88,13 +88,19 @@ class NoticeHandler:
 
         match notice_type:
             case NoticeType.friend_recall:
-                logger.info("好友撤回一条消息")
-                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{raw_message.get('time')}")
-                logger.warning("暂时不支持撤回消息处理")
+                operator_id = raw_message.get("operator_id")
+                ts = raw_message.get("time")
+                time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "未知时间"
+                logger.info(f"好友 {operator_id} 撤回一条消息")
+                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{time_str}")
+                return
             case NoticeType.group_recall:
-                logger.info("群内用户撤回一条消息")
-                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{raw_message.get('time')}")
-                logger.warning("暂时不支持撤回消息处理")
+                operator_id = raw_message.get("operator_id")
+                ts = raw_message.get("time")
+                time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "未知时间"
+                logger.info(f"群内用户 {operator_id} 撤回一条消息")
+                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{time_str}")
+                return
             case NoticeType.notify:
                 sub_type = raw_message.get("sub_type")
                 match sub_type:
