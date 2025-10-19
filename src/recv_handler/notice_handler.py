@@ -419,35 +419,26 @@ class NoticeHandler:
         else:
             text_str = ""
 
-        # 智能识别动作 (仅允许 X了X 三字结构)
-        match_list = re.findall(r"[\u4e00-\u9fa5]了[\u4e00-\u9fa5]", text_str)
-        has_action = False
-        if match_list:
-            action = match_list[0]  # 取第一个 X了X
+        # ---------------------
+        # 识别动作（仅识别开头的、前后相同汉字的 “X了X”）
+        # 例：拍了拍、戳了戳、摸了摸；不会识别“用了它”、“看了看他”
+        # ---------------------
+        # 只在文本最前面查找一次动作
+        m = re.match(r'^\s*([\u4e00-\u9fa5])了\1', text_str)
+        if m:
+            action = m.group(0)  # 如 “拍了拍”
             has_action = True
+            text_str = text_str[len(action):].strip()  # 移除前缀动作
         else:
-            action = "拍了拍"  # 默认 fallback
+            action = "拍了拍"
+            has_action = False
 
-        # 若存在动作，从原文中移除它（防止重复）
-        if has_action:
-            text_str = text_str.replace(action, "", 1).strip()
-
-        # 提取描述性后缀（动作之后的内容）
-        suffix = text_str.strip() if text_str else ""
-
-        # 检查句式是否已经反转（例如 “A: A...”）
-        prefix_wrong = False
-        if re.match(rf"^{re.escape(user_name)}[:：]", suffix) or suffix.startswith(user_name):
-            prefix_wrong = True
+        # 剩余部分作为描述性后缀
+        suffix = text_str.strip()
 
         # 生成标准格式句子
-        if prefix_wrong:
-            text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}"
-        else:
-            # 正常句式
-            text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}"
-
-        text_str = text_str.replace("  ", " ").strip()
+        text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}".strip()
+        text_str = " ".join(text_str.split())
 
         # 构造消息段和用户信息
         seg_data: Seg = Seg(type="text", data=text_str)
