@@ -322,6 +322,9 @@ class NoticeHandler:
                 self_id = raw_message.get("self_id")
                 old_card = raw_message.get("card_old") or "(默认)"
                 new_card = raw_message.get("card_new") or "(默认)"
+                if new_card == "(默认)":
+                    logger.info(f"群 {group_id} 用户 {user_id} 的群名片被刷新")
+                    return
                 member_info = await get_member_info(self.server_connection, group_id, user_id)
                 nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
                 if user_id == self_id:
@@ -396,18 +399,18 @@ class NoticeHandler:
 
         self_id = raw_message.get("self_id")
         target_id = raw_message.get("target_id")
+        sender_id = raw_message.get("sender_id") or user_id
         raw_info: list = raw_message.get("raw_info")
 
         if group_id:
-            user_qq_info: dict = await get_member_info(self.server_connection, group_id, user_id)
-            target_qq_info: dict = await get_member_info(self.server_connection, group_id, target_id)
+            sender_info = await get_member_info(self.server_connection, group_id, sender_id)
+            target_info = await get_member_info(self.server_connection, group_id, target_id)
         else:
-            user_qq_info: dict = await get_stranger_info(self.server_connection, user_id)
-            target_qq_info: dict = await get_stranger_info(self.server_connection, target_id)
+            sender_info = await get_stranger_info(self.server_connection, sender_id)
+            target_info = await get_stranger_info(self.server_connection, target_id)
 
-        user_name = user_qq_info.get("nickname") if user_qq_info and user_qq_info.get("nickname") else "QQ用户"
-        user_cardname = user_qq_info.get("card") if user_qq_info else None
-        target_name = target_qq_info.get("nickname") if target_qq_info and target_qq_info.get("nickname") else "QQ用户"
+        target_name = target_info.get("nickname") if target_info and target_info.get("nickname") else "未知目标"
+        sender_name = sender_info.get("nickname") if sender_info and sender_info.get("nickname") else "QQ用户"
 
         # 解析 raw_info 文本
         text_str = ""
@@ -451,8 +454,8 @@ class NoticeHandler:
         user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
             user_id=user_id,
-            user_nickname=user_name,
-            user_cardname=user_cardname,
+            user_nickname=sender_name,
+            user_cardname=sender_info.get("card") if sender_info else None,
         )
 
         # 提前过滤事件（空对象防御）
