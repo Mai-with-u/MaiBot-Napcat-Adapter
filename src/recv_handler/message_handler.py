@@ -314,7 +314,7 @@ class MessageHandler:
                     else:
                         logger.warning("at处理失败")
                 case RealMessageType.rps:
-                    message_data = raw_message.get("message", [{}])[0].get("data", {})
+                    message_data = sub_message.get("data", {})
                     result = message_data.get("result")
                     rps_map = {"1": "布","2": "剪刀","3": "石头"}
                     if result in rps_map:
@@ -323,21 +323,24 @@ class MessageHandler:
                         logger.warning(f"收到未知猜拳结果: {result}")
                         seg_message.append(Seg(type="text", data="[猜拳]"))
                 case RealMessageType.dice:
-                   message_data = raw_message.get("message", [{}])[0].get("data", {})
-                   result = message_data.get("result")
-                   if result is not None:
+                    message_data = sub_message.get("data", {})
+                    result = message_data.get("result")
+                    if result is not None:
                         seg_message.append(Seg(type="text", data=f"[骰子：{result}点]"))
-                   else:
+                    else:
                         logger.warning("收到骰子消息，但未包含结果")
                         seg_message.append(Seg(type="text", data="[骰子]"))
                 case RealMessageType.shake:
                     # 预计等价于戳一戳
-                    logger.warning("暂时不支持窗口抖动解析")
+                    logger.warning("收到窗口抖动消息")
+                    seg_message.append(Seg(type="text", data="[戳一戳]"))
                 case "poke":
+                    # 在QQNT中的窗口抖动(等同于戳一戳)
+                    logger.warning("收到戳一戳消息")
                     data = sub_message.get("data", {})
                     poke_type = data.get("type")
                     poke_id = data.get("id")
-                    seg_message.append(Seg(type="text", data="[戳一戳消息]")))
+                    seg_message.append(Seg(type="text", data="[戳一戳]"))
                 case RealMessageType.share:
                     logger.warning("暂时不支持链接解析")
                 case RealMessageType.forward:
