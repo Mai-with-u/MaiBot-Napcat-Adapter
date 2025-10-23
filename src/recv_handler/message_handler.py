@@ -314,9 +314,22 @@ class MessageHandler:
                     else:
                         logger.warning("at处理失败")
                 case RealMessageType.rps:
-                    logger.warning("暂时不支持猜拳魔法表情解析")
+                    message_data = raw_message.get("message", [{}])[0].get("data", {})
+                    result = message_data.get("result")
+                    rps_map = {"1": "布","2": "剪刀","3": "石头"}
+                    if result in rps_map:
+                        seg_message.append(Seg(type="text", data=f"[猜拳：{rps_map[result]}]"))
+                    else:
+                        logger.warning(f"收到未知猜拳结果: {result}")
+                        seg_message.append(Seg(type="text", data="[猜拳]"))
                 case RealMessageType.dice:
-                    logger.warning("暂时不支持骰子表情解析")
+                   message_data = raw_message.get("message", [{}])[0].get("data", {})
+                   result = message_data.get("result")
+                   if result is not None:
+                        seg_message.append(Seg(type="text", data=f"[骰子：{result}点]"))
+                   else:
+                        logger.warning("收到骰子消息，但未包含结果")
+                        seg_message.append(Seg(type="text", data="[骰子]"))
                 case RealMessageType.shake:
                     # 预计等价于戳一戳
                     logger.warning("暂时不支持窗口抖动解析")
