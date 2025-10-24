@@ -182,7 +182,7 @@ class NoticeHandler:
                         text = "（你）被取消管理员"
                     else:
                         text = f"管理员状态变更: {sub_type}"
-                    logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
+                    logger.info(f"群 {group_id} Bot {text.replace('（你）', '')}")
                 else:
                     if sub_type == "set":
                         text = "被设置为管理员"
@@ -217,10 +217,10 @@ class NoticeHandler:
                 if user_id == self_id:
                     if sub_type == "invite":
                         text = f"（你）被 {operator_name} 邀请加入"
-                        logger.info(f"群 {group_id} Bot被 {operator_id} 邀请加入")
+                        logger.info(f"群 {group_id} Bot 被 {operator_id} 邀请加入")
                     elif sub_type == "approve":
                         text = f"（你）通过 {operator_name} 审批加入"
-                        logger.info(f"群 {group_id} Bot通过 {operator_id} 审批加入")
+                        logger.info(f"群 {group_id} Bot 通过 {operator_id} 审批加入")
                     else:
                         text = f"（你）加入群（方式: {sub_type}）"
                         logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
@@ -290,10 +290,13 @@ class NoticeHandler:
                 )
                 system_notice = True
             case "essence":
+                self_id = raw_message.get("self_id")
                 group_id = raw_message.get("group_id")
                 sub_type = raw_message.get("sub_type")
                 message_id = raw_message.get("message_id")
                 operator_id = raw_message.get("operator_id")
+                sender_id = raw_message.get("sender_id", 0)
+                user_id = raw_message.get("user_id", 0)
                 operator_name = "系统"
                 if operator_id and operator_id != 0:
                     operator_info = await get_member_info(self.server_connection, group_id, operator_id)
@@ -304,7 +307,16 @@ class NoticeHandler:
                             or str(operator_id)
                         )
                 if sub_type == "add":
-                    text = f"{operator_name} 将 一条消息（ID: {message_id}）设为精华"
+                    if sender_id == 0:
+                        text = f"将 一条消息（ID: {message_id}）设为精华"
+                        logger.info(f"群 {group_id} 消息（ID: {message_id}）被 {operator_id} 设为精华")
+                    else:
+                        if user_id == self_id:
+                            text = f"将 {sender_name}（你）的消息设为精华"
+                            logger.info(f"群 {group_id} bot 的消息被 {operator_id} 设为精华")
+                        else:
+                            text = f"将 {sender_name} 的消息设为精华"
+                            logger.info(f"群 {group_id} 用户 {sender_id} 的消息被 {operator_id} 设为精华")
                 else:
                     text = f"精华消息事件：{sub_type}"
                 logger.info(f"群 {group_id} 消息（ID: {message_id}）被 {operator_id} 设为精华")
