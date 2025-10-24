@@ -623,6 +623,7 @@ class MessageHandler:
         """
         message_data: dict = raw_message.get("data")
         image_sub_type = message_data.get("sub_type")
+        file = message_data.get("file", "")
         summary = message_data.get("summary", "")
         try:
             image_base64 = await get_image_base64(message_data.get("url"))
@@ -633,10 +634,7 @@ class MessageHandler:
             if summary:
                  return Seg(type="text", data=f"[表情包：{summary}]")
             return None
-        if "动画表情" in summary:
-            """将动画表情视为表情包，防止报错"""
-            return Seg(type="emoji", data=image_base64)
-        if image_sub_type == 0:
+        if image_sub_type == 0 and not file.lower().endswith(".gif"):
             """这部分认为是图片"""
             return Seg(type="image", data=image_base64)
         elif image_sub_type not in [4, 9]:
