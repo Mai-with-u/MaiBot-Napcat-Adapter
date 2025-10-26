@@ -587,6 +587,12 @@ class MessageHandler:
         """
         message_data: dict = raw_message.get("data")
         plain_text: str = message_data.get("text")
+        # 处理emoji
+        if not plain_text and isinstance(raw_message.get("message"), list):
+            first = raw_message["message"][0]
+            if isinstance(first, dict):
+                plain_text = first.get("data", {}).get("text", "")
+        plain_text = "".join(f" {qq_face[ch]} " if ch in qq_face else ch for ch in plain_text)
         return Seg(type="text", data=plain_text)
 
     async def handle_face_message(self, raw_message: dict) -> Seg | None:
