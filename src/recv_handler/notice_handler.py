@@ -8,6 +8,7 @@ from typing import Tuple, Optional
 from src.logger import logger
 from src.config import global_config
 from src.database import BanUser, db_manager, is_identical
+from .qq_emoji_list import qq_face
 from . import NoticeType, ACCEPT_FORMAT
 from .message_sending import message_send_instance
 from .message_handler import message_handler
@@ -182,7 +183,7 @@ class NoticeHandler:
                         text = "（你）被取消管理员"
                     else:
                         text = f"管理员状态变更: {sub_type}"
-                    logger.info(f"群 {group_id} Bot {text.replace('（你）', '')}")
+                    logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
                 else:
                     if sub_type == "set":
                         text = "被设置为管理员"
@@ -217,10 +218,10 @@ class NoticeHandler:
                 if user_id == self_id:
                     if sub_type == "invite":
                         text = f"（你）被 {operator_name} 邀请加入"
-                        logger.info(f"群 {group_id} Bot 被 {operator_id} 邀请加入")
+                        logger.info(f"群 {group_id} Bot被 {operator_id} 邀请加入")
                     elif sub_type == "approve":
                         text = f"（你）通过 {operator_name} 审批加入"
-                        logger.info(f"群 {group_id} Bot 通过 {operator_id} 审批加入")
+                        logger.info(f"群 {group_id} Bot通过 {operator_id} 审批加入")
                     else:
                         text = f"（你）加入群（方式: {sub_type}）"
                         logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
@@ -313,7 +314,7 @@ class NoticeHandler:
                     else:
                         if user_id == self_id:
                             text = f"将 {sender_name}（你）的消息设为精华"
-                            logger.info(f"群 {group_id} bot 的消息被 {operator_id} 设为精华")
+                            logger.info(f"群 {group_id} Bot的消息被 {operator_id} 设为精华")
                         else:
                             text = f"将 {sender_name} 的消息设为精华"
                             logger.info(f"群 {group_id} 用户 {sender_id} 的消息被 {operator_id} 设为精华")
@@ -335,13 +336,12 @@ class NoticeHandler:
                 old_card = raw_message.get("card_old") or "(默认)"
                 new_card = raw_message.get("card_new") or "(默认)"
                 if new_card == "(默认)":
-                    logger.info(f"群 {group_id} 用户 {user_id} 的群名片被刷新")
                     return
                 member_info = await get_member_info(self.server_connection, group_id, user_id)
                 nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
                 if user_id == self_id:
                     text = f"（你）群卡片被修改为：{old_card} → {new_card}"
-                    logger.info(f"群 {group_id} Bot {user_id} 的群名片被修改为：{old_card} → {new_card}")
+                    logger.info(f"群 {group_id} Bot的群名片被修改为：{old_card} → {new_card}")
                 else:
                     text = f"群卡片被修改为：{old_card} → {new_card}"
                     logger.info(f"群 {group_id} 用户 {user_id} 的群名片被修改为：{old_card} → {new_card}")
@@ -351,6 +351,33 @@ class NoticeHandler:
                     user_id=user_id,
                     user_nickname=nickname,
                     user_cardname=new_card,
+                )
+                system_notice = True
+            case "group_msg_emoji_like":
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                likes = raw_message.get("likes", [])
+                member_info = await get_member_info(self.server_connection, group_id, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
+                emoji_list = []
+                for like in likes:
+                    emoji_id = str(like.get("emoji_id"))
+                    count = like.get("count", 1)
+                    if emoji_id in qq_face:
+                        emoji_text = qq_face[emoji_id]
+                    else:
+                        emoji_text = f"[未知表情 {emoji_id}]"
+                        logger.warning(f"不支持的表情：{emoji_id}")
+                    emoji_list.append(f"{emoji_text} ×{count}")
+                emoji_text_joined = "，".join(emoji_list) if emoji_list else "无"
+                text = f"回应了你的消息：{emoji_text_joined}"
+                logger.info(f"群 {group_id} 用户 {user_id} 回应了你的消息：{emoji_text_joined}")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
                 )
                 system_notice = True
             case _:
