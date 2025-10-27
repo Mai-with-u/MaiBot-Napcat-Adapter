@@ -55,11 +55,10 @@ class NoticeHandler:
             user_id = 0  # 使用0表示全体禁言
             lift_time = -1
         ban_record = BanUser(user_id=user_id, group_id=group_id, lift_time=lift_time)
-        for record in self.banned_list:
+        for idx, record in enumerate(self.banned_list):
             if is_identical(record, ban_record):
-                self.banned_list.remove(record)
-                self.banned_list.append(ban_record)
-                db_manager.create_ban_record(ban_record)  # 作为更新
+                self.banned_list[idx] = ban_record  # 更新
+                db_manager.create_ban_record(ban_record)   # 更新数据库
                 return
         self.banned_list.append(ban_record)
         db_manager.create_ban_record(ban_record)  # 添加到数据库
@@ -71,7 +70,8 @@ class NoticeHandler:
         if user_id is None:
             user_id = 0  # 使用0表示全体禁言
         ban_record = BanUser(user_id=user_id, group_id=group_id, lift_time=-1)
-        self.lifted_list.append(ban_record)
+        if not any(is_identical(ban_record, r) for r in self.lifted_list):
+            self.lifted_list.append(ban_record)
         db_manager.delete_ban_record(ban_record)  # 删除数据库中的记录
 
     async def handle_notice(self, raw_message: dict) -> None:
@@ -333,12 +333,12 @@ class NoticeHandler:
                 group_id = raw_message.get("group_id")
                 user_id = raw_message.get("user_id")
                 self_id = raw_message.get("self_id")
-                old_card = raw_message.get("card_old") or "(默认)"
-                new_card = raw_message.get("card_new") or "(默认)"
-                if new_card == "(默认)":
-                    return
                 member_info = await get_member_info(self.server_connection, group_id, user_id)
                 nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
+                old_card = raw_message.get("card_old") or nickname
+                new_card = raw_message.get("card_new") or "(默认)"
+                if new_card == "(默认)" or new_card == nickname:
+                    return
                 if user_id == self_id:
                     text = f"（你）群卡片被修改为：{old_card} → {new_card}"
                     logger.info(f"群 {group_id} Bot的群名片被修改为：{old_card} → {new_card}")
@@ -492,7 +492,7 @@ class NoticeHandler:
         seg_data: Seg = Seg(type="text", data=text_str)
         user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
-            user_id=user_id,
+            user_id=sender_id,
             user_nickname=sender_name,
             user_cardname=sender_info.get("card") if sender_info else None,
         )
@@ -749,18 +749,13 @@ class NoticeHandler:
     async def handle_natural_lift(self) -> None:
         while True:
             if len(self.lifted_list) != 0:
-                lift_record = self.lifted_list.pop()
+                lift_record = self.lifted_list.pop(0)
                 group_id = lift_record.group_id
                 user_id = lift_record.user_id
 
                 # 防御：防止同一用户重复自然解除
-                for record in list(self.lifted_list):
-                    if record.user_id == user_id and record.group_id == group_id:
-                        logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
-                        continue
-
-                # 跳过全体禁言记录
-                if lift_record.user_id == 0 or lift_record.lift_time == -1:
+                if any(r.user_id == user_id and r.group_id == group_id for r in self.lifted_list):
+                    logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
                     continue
 
                 db_manager.delete_ban_record(lift_record)  # 从数据库中删除禁言记录
@@ -859,7 +854,7 @@ class NoticeHandler:
             },
         )
         text_seg = Seg(type="text", data=f"解除了 {user_nickname} 的禁言")
-        logger.info(f"群 {group_id} 用户 {user_id} 的禁言被系统解除")
+        logger.info(f"群 {group_id} 用户 {user_id} 的禁言被自然解除")
         return Seg(type="seglist", data=[notify_seg, text_seg])
 
     async def auto_lift_detect(self) -> None:
@@ -873,11 +868,12 @@ class NoticeHandler:
                 if ban_record.user_id == 0 or ban_record.lift_time == -1:
                     continue
                 if ban_record.lift_time <= int(time.time()):
-                    if ban_record.user_id == self_id:
-                        logger.info(f"检测到 Bot 自身在群 {ban_record.group_id} 的禁言已解除")
-                    else:
-                        logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
-                    self.lifted_list.append(ban_record)
+                    if ban_record not in self.lifted_list:
+                        self.lifted_list.append(ban_record)
+                        if ban_record.user_id == self_id:
+                            logger.info(f"检测到 Bot 自身在群 {ban_record.group_id} 的禁言已解除")
+                        else:
+                            logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
                     self.banned_list.remove(ban_record)
             await asyncio.sleep(5)
 
