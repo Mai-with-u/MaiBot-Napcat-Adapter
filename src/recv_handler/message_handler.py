@@ -592,7 +592,11 @@ class MessageHandler:
             first = raw_message["message"][0]
             if isinstance(first, dict):
                 plain_text = first.get("data", {}).get("text", "")
-        plain_text = "".join(f" {qq_face[ch]} " if ch in qq_face else ch for ch in plain_text)
+        for key, value in qq_face.items():
+            if key.isdigit():  # 跳过数字
+                continue
+            plain_text = plain_text.replace(key, f" {value} ")
+        plain_text = " ".join(plain_text.split())
         return Seg(type="text", data=plain_text)
 
     async def handle_face_message(self, raw_message: dict) -> Seg | None:
@@ -664,8 +668,8 @@ class MessageHandler:
         message_data: dict = raw_message.get("data")
         if message_data:
             qq_id = message_data.get("qq")
-        if qq_id == "all":
-            return Seg(type="text", data=f"@全体成员")
+            if qq_id == "all":
+                return Seg(type="text", data=f"@全体成员")
             if str(self_id) == str(qq_id):
                 logger.debug("机器人被at")
                 self_info: dict = await get_self_info(self.server_connection)
