@@ -110,9 +110,10 @@ class NoticeHandler:
                             user_id, group_id, False, False
                         ):
                             logger.info("处理戳一戳消息")
-                            handled_message, user_info = await self.handle_poke_notify(raw_message, group_id, user_id)
+                            await self.handle_poke_notify(raw_message, group_id, user_id)
                         else:
                             logger.warning("戳一戳消息被禁用，取消戳一戳处理")
+                        return
                     case _:
                         logger.warning(f"不支持的notify类型: {notice_type}.{sub_type}")
             case NoticeType.group_ban:
@@ -431,69 +432,105 @@ class NoticeHandler:
     ) -> Tuple[Seg | None, UserInfo | None]:
         # sourcery skip: merge-comparisons, merge-duplicate-blocks, remove-redundant-if, remove-unnecessary-else, swap-if-else-branches
         self_info: dict = await get_self_info(self.server_connection)
-
         if not self_info:
             logger.error("自身信息获取失败")
             return None, None
 
         self_id = raw_message.get("self_id")
         target_id = raw_message.get("target_id")
-        target_name: str = None
+        sender_id = raw_message.get("sender_id") or user_id
         raw_info: list = raw_message.get("raw_info")
 
         if group_id:
-            user_qq_info: dict = await get_member_info(self.server_connection, group_id, user_id)
+            sender_info = await get_member_info(self.server_connection, group_id, sender_id)
+            target_info = await get_member_info(self.server_connection, group_id, target_id)
         else:
-            user_qq_info: dict = await get_stranger_info(self.server_connection, user_id)
-        if user_qq_info:
-            user_name = user_qq_info.get("nickname")
-            user_cardname = user_qq_info.get("card")
+            sender_info = await get_stranger_info(self.server_connection, sender_id)
+            target_info = await get_stranger_info(self.server_connection, target_id)
+
+        target_name = target_info.get("nickname") if target_info and target_info.get("nickname") else "未知目标"
+        sender_name = sender_info.get("nickname") if sender_info and sender_info.get("nickname") else "QQ用户"
+
+        # 解析 raw_info 文本
+        text_str = ""
+        if isinstance(raw_info, list) and len(raw_info) > 0:
+            try:
+                parts = []
+                for item in raw_info:
+                    if isinstance(item, dict):
+                        val = (item.get("txt") or item.get("name") or "").strip()
+                        if val and not all(ch in " \n\t" for ch in val):
+                            parts.append(val)
+                text_str = "".join(parts).strip()
+            except Exception as e:
+                logger.warning(f"原始 raw_info 解析失败: {e}")
         else:
-            user_name = "QQ用户"
-            user_cardname = "QQ用户"
-            logger.info("无法获取戳一戳对方的用户昵称")
+            text_str = ""
 
-        # 计算Seg
-        if self_id == target_id:
-            display_name = ""
-            target_name = self_info.get("nickname")
-
-        elif self_id == user_id:
-            # 让ada不发送麦麦戳别人的消息
-            return None, None
-
+        # ---------------------
+        # 识别动作（仅识别开头的、前后相同的 “X了X”）
+        # 例：拍了拍、戳了戳、摸了摸；不会识别“用了它”、“看了看他”等
+        # ---------------------
+        # 只在文本最前面查找一次动作
+        m = re.match(r'^\s*([\u4e00-\u9fa5])了\1', text_str)
+        if m:
+            action = m.group(0)  # 如 “拍了拍”
+            has_action = True
+            text_str = text_str[len(action):].strip()  # 移除前缀动作
         else:
-            # 老实说这一步判定没啥意义，毕竟私聊是没有其他人之间的戳一戳，但是感觉可以有这个判定来强限制群聊环境
-            if group_id:
-                fetched_member_info: dict = await get_member_info(self.server_connection, group_id, target_id)
-                if fetched_member_info:
-                    target_name = fetched_member_info.get("nickname")
-                else:
-                    target_name = "QQ用户"
-                    logger.info("无法获取被戳一戳方的用户昵称")
-                display_name = user_name
-            else:
-                return None, None
+            action = "拍了拍"
+            has_action = False
 
-        first_txt: str = "戳了戳"
-        second_txt: str = ""
-        try:
-            first_txt = raw_info[2].get("txt", "戳了戳")
-            second_txt = raw_info[4].get("txt", "")
-        except Exception as e:
-            logger.warning(f"解析戳一戳消息失败: {str(e)}，将使用默认文本")
+        # 剩余部分作为描述性后缀
+        suffix = text_str.strip()
 
+        # 生成标准格式句子
+        text_str = f"{action} {target_name}{(' ' + suffix) if suffix else ''}".strip()
+        text_str = " ".join(text_str.split())
+
+        # 构造消息段和用户信息
+        seg_data: Seg = Seg(type="text", data=text_str)
         user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
-            user_id=user_id,
-            user_nickname=user_name,
-            user_cardname=user_cardname,
+            user_id=sender_id,
+            user_nickname=sender_name,
+            user_cardname=sender_info.get("card") if sender_info else None,
         )
 
-        seg_data: Seg = Seg(
-            type="text",
-            data=f"{display_name}{first_txt}{target_name}{second_txt}（这是QQ的一个功能，用于提及某人，但没那么明显）",
+        # 提前过滤事件（空对象防御）
+        if not seg_data or not user_info:
+            return None, None
+
+        # 判断是否需要发送（别人戳Bot / Bot戳别人 / 别人戳别人）
+        send_group_info = None
+        if group_id:
+            fetched_group_info = await get_group_info(self.server_connection, group_id)
+            group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+            send_group_info = GroupInfo(
+                platform=global_config.maibot_server.platform_name,
+                group_id=group_id,
+                group_name=group_name,
+            )
+
+        await message_send_instance.message_send(
+            MessageBase(
+                message_info=BaseMessageInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    message_id="poke",
+                    time=time.time(),
+                    user_info=user_info,
+                    group_info=send_group_info,
+                    template_info=None,
+                    format_info=FormatInfo(
+                        content_format=["text"],
+                        accept_format=ACCEPT_FORMAT,
+                    ),
+                ),
+                message_segment=seg_data,
+                raw_message=json.dumps(raw_message),
+            )
         )
+
         return seg_data, user_info
 
     async def handle_ban_notify(self, raw_message: dict, group_id: int) -> Tuple[Seg, UserInfo] | Tuple[None, None]:
