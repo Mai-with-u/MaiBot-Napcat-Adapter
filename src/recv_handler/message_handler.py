@@ -12,6 +12,7 @@ from .qq_emoji_list import qq_face
 from .message_sending import message_send_instance
 from . import RealMessageType, MessageType, ACCEPT_FORMAT
 
+import re
 import time
 import json
 import base64
@@ -586,6 +587,16 @@ class MessageHandler:
         """
         message_data: dict = raw_message.get("data")
         plain_text: str = message_data.get("text")
+        # 处理emoji
+        if not plain_text and isinstance(raw_message.get("message"), list):
+            first = raw_message["message"][0]
+            if isinstance(first, dict):
+                plain_text = first.get("data", {}).get("text", "")
+        for key, value in qq_face.items():
+            if key.isdigit():  # 跳过数字
+                continue
+            plain_text = plain_text.replace(key, f" {value} ")
+        plain_text = " ".join(plain_text.split())
         return Seg(type="text", data=plain_text)
 
     async def handle_face_message(self, raw_message: dict) -> Seg | None:
@@ -601,9 +612,14 @@ class MessageHandler:
         if face_raw_id in qq_face:
             face_content: str = qq_face.get(face_raw_id)
             return Seg(type="text", data=face_content)
-        else:
-            logger.warning(f"不支持的表情：{face_raw_id}")
-            return None
+        # 兜底处理：读取 raw.faceText
+        raw_data = message_data.get("raw", {})
+        face_text = raw_data.get("faceText", "")
+        if face_text:
+            face_text_clean = face_text.lstrip("/")
+            return Seg(type="text", data=f"[表情：{face_text_clean}]")
+        logger.warning(f"不支持的表情：{face_raw_id}")
+        return None
 
     async def handle_image_message(self, raw_message: dict) -> Seg | None:
         """
@@ -615,12 +631,18 @@ class MessageHandler:
         """
         message_data: dict = raw_message.get("data")
         image_sub_type = message_data.get("sub_type")
+        file = message_data.get("file", "")
+        summary = message_data.get("summary", "")
         try:
             image_base64 = await get_image_base64(message_data.get("url"))
         except Exception as e:
             logger.error(f"图片消息处理失败: {str(e)}")
+            """如果有 summary 就返回 summary 内容"""
+            summary = re.sub(r"[\[\]]", "", summary)
+            if summary:
+                 return Seg(type="text", data=f"[表情包：{summary}]")
             return None
-        if image_sub_type == 0:
+        if image_sub_type == 0 and not file.lower().endswith(".gif"):
             """这部分认为是图片"""
             return Seg(type="image", data=image_base64)
         elif image_sub_type not in [4, 9]:
