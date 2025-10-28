@@ -118,6 +118,20 @@ class NoticeHandler:
             case NoticeType.group_ban:
                 sub_type = raw_message.get("sub_type")
                 match sub_type:
+                    # 私聊输入状态（“对方正在输入...”）
+                    case "input_status":
+                        user_id = raw_message.get("user_id")
+                        group_id = raw_message.get("group_id", 0)
+                        event_type = raw_message.get("event_type")
+                        status_text = raw_message.get("status_text", "")
+                        # 仅手机私聊有效
+                        if not group_id or group_id == 0:
+                            if status_text:
+                                logger.info(f"用户 {user_id} {status_text}")
+                            else:
+                                status_map = {1: "正在输入中", 2: "已刷新聊天页面"}
+                                logger.info(f"用户 {user_id} {status_map.get(event_type, '输入状态变更')}")
+                        return
                     case NoticeType.GroupBan.ban:
                         if not await message_handler.check_allow_to_chat(user_id, group_id, True, False):
                             return None
