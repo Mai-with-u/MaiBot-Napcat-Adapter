@@ -14,6 +14,7 @@ from . import RealMessageType, MessageType, ACCEPT_FORMAT
 
 import time
 import json
+import base64
 import websockets as Server
 from typing import List, Tuple, Optional, Dict, Any
 import uuid
@@ -312,12 +313,33 @@ class MessageHandler:
                     else:
                         logger.warning("at处理失败")
                 case RealMessageType.rps:
-                    logger.warning("暂时不支持猜拳魔法表情解析")
+                    message_data = sub_message.get("data", {})
+                    result = message_data.get("result")
+                    rps_map = {"1": "布","2": "剪刀","3": "石头"}
+                    if result in rps_map:
+                        seg_message.append(Seg(type="text", data=f"[猜拳：{rps_map[result]}]"))
+                    else:
+                        logger.warning(f"收到未知猜拳结果: {result}")
+                        seg_message.append(Seg(type="text", data="[猜拳]"))
                 case RealMessageType.dice:
-                    logger.warning("暂时不支持骰子表情解析")
+                    message_data = sub_message.get("data", {})
+                    result = message_data.get("result")
+                    if result is not None:
+                        seg_message.append(Seg(type="text", data=f"[骰子：{result}点]"))
+                    else:
+                        logger.warning("收到骰子消息，但未包含结果")
+                        seg_message.append(Seg(type="text", data="[骰子]"))
                 case RealMessageType.shake:
                     # 预计等价于戳一戳
-                    logger.warning("暂时不支持窗口抖动解析")
+                    logger.warning("收到窗口抖动消息")
+                    seg_message.append(Seg(type="text", data="[戳一戳]"))
+                case "poke":
+                    # 在QQNT中的窗口抖动(等同于戳一戳)
+                    logger.warning("收到戳一戳消息")
+                    data = sub_message.get("data", {})
+                    poke_type = data.get("type")
+                    poke_id = data.get("id")
+                    seg_message.append(Seg(type="text", data="[戳一戳]"))
                 case RealMessageType.share:
                     logger.warning("暂时不支持链接解析")
                 case RealMessageType.forward:
@@ -332,6 +354,224 @@ class MessageHandler:
                         logger.warning("转发消息处理失败")
                 case RealMessageType.node:
                     logger.warning("不支持转发消息节点解析")
+                case RealMessageType.json:
+                    try:
+                        data_field = sub_message.get("data", {})
+                        raw_json_str = data_field.get("data", "")
+                        if not raw_json_str:
+                            logger.warning("Napcat JSON卡片中未找到 data 字段")
+                            seg_message.append(Seg(type="text", data="[JSON卡片消息: 空]"))
+                            break
+
+                        # 二次解析 Napcat JSON
+                        try:
+                            parsed_data = json.loads(raw_json_str)
+                        except Exception as e:
+                            logger.error(f"Napcat JSON 二次解析失败: {e}")
+                            seg_message.append(Seg(type="text", data=f"[JSON卡片原始字符串截断]: {raw_json_str[:200]}..."))
+                            break
+
+                        app_name = parsed_data.get("app", "未知应用")
+                        view = parsed_data.get("view", "")
+                        prompt = parsed_data.get("prompt", "")
+                        meta = parsed_data.get("meta", {})
+                        logger.debug(f"Napcat JSON卡片类型: {app_name} / {view}")
+
+                        # 礼物卡片
+                        if app_name == "com.tencent.giftmall.giftark":
+                            gift = meta.get("giftData", {})
+                            gift_name = gift.get("giftName", "未知礼物")
+                            gift_msg = gift.get("giftMsg", "")
+                            seg_message.append(Seg(type="text", data=f"[收到礼物] {gift_name}：{gift_msg}"))
+
+                        # 推荐联系人
+                        elif app_name == "com.tencent.contact.lua":
+                            contact_info = meta.get("contact", {})
+                            name = contact_info.get("nickname", "未知联系人")
+                            tag = contact_info.get("tag", "推荐联系人")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {name}"))
+
+                        # 推荐群聊
+                        elif app_name == "com.tencent.troopsharecard":
+                            contact_info = meta.get("contact", {})
+                            name = contact_info.get("nickname", "未知群聊")
+                            tag = contact_info.get("tag", "推荐群聊")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {name}"))
+
+                        # 图文分享（如 哔哩哔哩HD、网页、群精华等）
+                        elif app_name == "com.tencent.tuwen.lua":
+                            news = meta.get("news", {})
+                            title = news.get("title", "未知标题")
+                            desc = (news.get("desc", "") or "").replace("[图片]", "").strip()
+                            tag = news.get("tag", "图文分享")
+                            preview_url = news.get("preview", "")
+                            if tag and title and tag in title:
+                                title = title.replace(tag, "", 1).strip("：: -— ")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                            if preview_url:
+                                try:
+                                    image_base64 = await get_image_base64(preview_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"图文图片下载失败: {e}")
+
+                        # 群相册（含预览图）
+                        elif app_name == "com.tencent.feed.lua":
+                            feed = meta.get("feed", {})
+                            title = feed.get("title", "群相册")
+                            tag = feed.get("tagName", "群相册")
+                            desc = feed.get("forwardMessage", "")
+                            cover_url = feed.get("cover", "")
+                            if tag and title and tag in title:
+                                title = title.replace(tag, "", 1).strip("：: -— ")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                            if cover_url:
+                                try:
+                                    image_base64 = await get_image_base64(cover_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"群相册图片下载失败: {e}")
+
+                        # 群公告（由于图片URL是加密的，因此无法读取）
+                        elif app_name == "com.tencent.mannounce":
+                            mannounce = meta.get("mannounce", {})
+                            title = mannounce.get("title", "")
+                            text = mannounce.get("text", "")
+                            encode_flag = mannounce.get("encode", 0)
+                            if encode_flag == 1:
+                                try:
+                                    if title:
+                                        title = base64.b64decode(title).decode("utf-8", errors="ignore")
+                                    if text:
+                                        text = base64.b64decode(text).decode("utf-8", errors="ignore")
+                                except Exception as e:
+                                    logger.warning(f"群公告Base64解码失败: {e}")
+                            if title and text:
+                                content = f"[{title}]：{text}"
+                            elif title:
+                                content = f"[{title}]"
+                            elif text:
+                                content = f"{text}"
+                            else:
+                                content = "[群公告]"
+                            seg_message.append(Seg(type="text", data=content))
+
+                        # QQ小程序分享（含预览图）
+                        elif app_name == "com.tencent.miniapp_01":
+                            detail = meta.get("detail_1", {})
+                            title = detail.get("title", "未知小程序")
+                            desc = detail.get("desc", "")
+                            preview_url = detail.get("preview", "")
+                            tag = "QQ小程序"
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                            if preview_url:
+                                try:
+                                    image_base64 = await get_image_base64(preview_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"QQ小程序图片下载失败: {e}")
+
+                        # QQ收藏分享（含预览图）
+                        elif app_name == "com.tencent.template.qqfavorite.share":
+                            news = meta.get("news", {})
+                            desc = news.get("desc", "").replace("[图片]", "").strip()
+                            preview_url = news.get("preview", "")
+                            tag = news.get("tag", "QQ收藏")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {desc}"))
+                            if preview_url:
+                                try:
+                                    image_base64 = await get_image_base64(preview_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"QQ收藏图片下载失败: {e}")
+
+                        # QQ空间分享（含预览图）
+                        elif app_name == "com.tencent.miniapp.lua":
+                            miniapp = meta.get("miniapp", {})
+                            title = miniapp.get("title", "未知标题")
+                            tag = miniapp.get("tag", "QQ空间")
+                            preview_url = miniapp.get("preview", "")
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}"))
+                            if preview_url:
+                                try:
+                                    image_base64 = await get_image_base64(preview_url)
+                                    seg_message.append(Seg(type="image", data=image_base64))
+                                except Exception as e:
+                                    logger.error(f"QQ空间图片下载失败: {e}")
+
+                        # QQ地图位置分享
+                        elif app_name == "com.tencent.map":
+                            location = meta.get("Location.Search", {})
+                            name = location.get("name", "未知地点")
+                            address = location.get("address", "")
+                            seg_message.append(Seg(type="text", data=f"[位置] {address} · {name}"))
+
+                        # QQ一起听歌
+                        elif app_name == "com.tencent.together":
+                            invite = (meta or {}).get("invite", {})
+                            title = invite.get("title") or "一起听歌"
+                            summary = invite.get("summary") or ""
+                            seg_message.append(Seg(type="text", data=f"[{title}] {summary}"))
+
+                        # 通用匹配（包括 music.lua、tuwen.lua 等）
+                        elif app_name:
+                            # 自动提取 meta 里的第一个子字段（news/music/video/app...）
+                            if isinstance(meta, dict) and meta:
+                                first_key = next(iter(meta))
+                                news = meta.get(first_key, {})
+                            else:
+                                news = {}
+
+                            title = news.get("title") or meta.get("title")
+                            desc = news.get("desc") or meta.get("desc")
+                            tag = news.get("tag") or meta.get("tag")
+                            encode_flag = news.get("encode") or meta.get("encode") or 0
+                            if encode_flag == 1:
+                                try:
+                                    if title:
+                                        title = base64.b64decode(title).decode("utf-8", errors="ignore")
+                                    if desc:
+                                        desc = base64.b64decode(desc).decode("utf-8", errors="ignore")
+                                except Exception as e:
+                                    logger.warning(f"Base64解码失败: {e}")
+
+                            # 如果三者全都为空，记录错误并跳过输出
+                            if not (title or desc or tag):
+                                logger.error(f"[JSON解析失败] app_name={app_name}，未识别的字段：meta={meta}")
+                                continue
+
+                            # 三者中至少要有两个有内容，否则判定为未识别类型
+                            non_empty_count = sum(bool(x) for x in [title, desc, tag])
+                            if non_empty_count < 2:
+                                logger.warning(f"[JSON卡片字段不足] app_name={app_name}，字段过少：title={title}, desc={desc}, tag={tag}，字段：meta={meta}")
+                                continue
+
+                            if not tag:
+                                tag = "分享"
+                            if not title:
+                                title = "未知标题"
+                            if not desc:
+                                desc = ""
+                            
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+
+                        # 未识别类型
+                        else:
+                            logger.warning(f"[未识别JSON卡片]: {prompt}")
+
+                    except Exception as e:
+                        logger.error(f"JSON卡片消息处理失败: {e}")
+
+                # 文件消息
+                case RealMessageType.file:
+                    file_data = sub_message.get("data", {})
+                    file_name = file_data.get("file", "未知文件")
+                    file_size = file_data.get("file_size", "0")
+                    try:
+                        size_mb = round(int(file_size) / 1024 / 1024, 2)
+                    except Exception:
+                        size_mb = 0
+                    seg_message.append(Seg(type="text", data=f"[文件] {file_name}（{size_mb} MB）"))
                 case _:
                     logger.warning(f"未知消息类型: {sub_message_type}")
         return seg_message, additional_config
