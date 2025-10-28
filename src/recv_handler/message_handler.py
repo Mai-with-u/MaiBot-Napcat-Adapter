@@ -666,6 +666,8 @@ class MessageHandler:
         message_data: dict = raw_message.get("data")
         if message_data:
             qq_id = message_data.get("qq")
+            if qq_id == "all":
+                return Seg(type="text", data=f"@全体成员")
             if str(self_id) == str(qq_id):
                 logger.debug("机器人被at")
                 self_info: dict = await get_self_info(self.server_connection)
