@@ -57,8 +57,9 @@ class NoticeHandler:
         ban_record = BanUser(user_id=user_id, group_id=group_id, lift_time=lift_time)
         for idx, record in enumerate(self.banned_list):
             if is_identical(record, ban_record):
-                self.banned_list[idx] = ban_record  # 更新
-                db_manager.create_ban_record(ban_record)   # 更新数据库
+                self.banned_list.pop(idx)
+                self.banned_list.append(ban_record)
+                db_manager.create_ban_record(ban_record)  # 更新数据库
                 return
         self.banned_list.append(ban_record)
         db_manager.create_ban_record(ban_record)  # 添加到数据库
@@ -701,17 +702,11 @@ class NoticeHandler:
             )
             self._lift_operation(group_id, user_id)
 
-            # 防止自然检测重复触发：从banned_list中移除该用户
-            for record in list(self.banned_list):
-                if record.user_id == user_id and record.group_id == group_id:
-                    self.banned_list.remove(record)
-                    break
+            # 防止自然检测重复触发：从 banned_list 中移除该用户
+            self.banned_list = [r for r in self.banned_list if not (r.user_id == user_id and r.group_id == group_id)]
 
-            # 同时也避免lifted_list重复添加
-            for record in list(self.lifted_list):
-                if record.user_id == user_id and record.group_id == group_id:
-                    self.lifted_list.remove(record)
-                    break
+            # 避免 lifted_list 重复添加
+            self.lifted_list = [r for r in self.lifted_list if not (r.user_id == user_id and r.group_id == group_id)]
 
         seg_data: Seg = Seg(
             type="notify",
@@ -753,9 +748,20 @@ class NoticeHandler:
                 group_id = lift_record.group_id
                 user_id = lift_record.user_id
 
-                # 防御：防止同一用户重复自然解除
+                # 防御：防止重复解除
                 if any(r.user_id == user_id and r.group_id == group_id for r in self.lifted_list):
-                    logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
+                   if user_id == 0:
+                       logger.debug(f"检测到重复解除群禁言请求（群{group_id}），跳过。")
+                   else:
+                       logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
+                   continue
+
+                # 检查是否解除禁言
+                if not any(r.user_id == user_id and r.group_id == group_id for r in db_manager.get_ban_records()):
+                    if user_id == 0:
+                        logger.info(f"群 {group_id} 已解除群禁言。")
+                    else:
+                        logger.info(f"群 {group_id} 用户 {user_id} 已被解除禁言。")
                     continue
 
                 db_manager.delete_ban_record(lift_record)  # 从数据库中删除禁言记录
