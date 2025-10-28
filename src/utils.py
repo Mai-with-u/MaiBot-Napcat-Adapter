@@ -1,5 +1,6 @@
 import websockets as Server
 import json
+import asyncio
 import base64
 import uuid
 import urllib3
@@ -294,43 +295,41 @@ async def read_ban_list(
             一个已经自然解除全体禁言的群的BanUser列表,
         ]
     """
-    try:
+        try:
         ban_list = db_manager.get_ban_records()
         lifted_list: List[BanUser] = []
         logger.info("已经读取禁言列表")
-        for ban_record in list(ban_list):  
-            if ban_record.user_id == 0:
-                try:
-                    fetched_group_info = await get_group_info(websocket, ban_record.group_id)
-                except Exception as e:
-                    logger.warning(f"获取群信息失败（群号: {ban_record.group_id}）：{e}，保留全体禁言状态")
-                    continue
-                if not fetched_group_info:
-                    logger.warning(f"群 {ban_record.group_id} 暂未返回群信息，跳过全体禁言检查")
-                    continue
-                group_all_shut = fetched_group_info.get("group_all_shut")
-                if group_all_shut == 0:
-                    lifted_list.append(ban_record)
-                    ban_list.remove(ban_record)
-                continue
-            try:
-                fetched_member_info = await get_member_info(websocket, ban_record.group_id, ban_record.user_id)
-            except Exception as e:
-                logger.warning(
-                    f"获取群成员信息失败（群号: {ban_record.group_id} 用户ID: {ban_record.user_id}）：{e}，保留禁言状态"
-                )
-                continue
-            if fetched_member_info is None:
-                logger.warning(
-                    f"群 {ban_record.group_id} 用户 {ban_record.user_id} 暂无成员信息（Napcat缓存未加载？），暂不视为解除"
-                )
-                continue
-            lift_ban_time: int = fetched_member_info.get("shut_up_timestamp", 0)
-            if lift_ban_time == 0:
-                lifted_list.append(ban_record)
-                ban_list.remove(ban_record)
-            else:
-                ban_record.lift_time = lift_ban_time
+        tasks = []
+        for record in ban_list:
+            if record.user_id == 0:  # 群全体禁言
+                async def handle_group(r=record):
+                    try:
+                        group_info = await get_group_info(websocket, r.group_id)
+                    except Exception as e:
+                        logger.warning(f"获取群信息失败（群号: {r.group_id}）：{e}，保留禁言状态")
+                        return None
+                    if not group_info or group_info.get("group_all_shut") == 0:
+                        return r
+                    return None
+                tasks.append(handle_group())
+            else:  # 普通用户
+                async def handle_user(r=record):
+                    try:
+                        member_info = await get_member_info(websocket, r.group_id, r.user_id)
+                    except Exception as e:
+                        logger.warning(f"获取成员信息失败（群号: {r.group_id} 用户ID: {r.user_id}）：{e}")
+                        return None
+                    if not member_info:
+                        return None
+                    lift_time = member_info.get("shut_up_timestamp", 0)
+                    if lift_time == 0:
+                        return r
+                    r.lift_time = lift_time
+                    return None
+                tasks.append(handle_user())
+        results = await asyncio.gather(*tasks)
+        lifted_list = [r for r in results if r is not None]
+        ban_list = [r for r in ban_list if r not in lifted_list]
         db_manager.update_ban_record(ban_list)
         return ban_list, lifted_list
     except Exception as e:
