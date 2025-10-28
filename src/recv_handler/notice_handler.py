@@ -1,3 +1,4 @@
+import re
 import time
 import json
 import asyncio
@@ -7,6 +8,7 @@ from typing import Tuple, Optional
 from src.logger import logger
 from src.config import global_config
 from src.database import BanUser, db_manager, is_identical
+from .qq_emoji_list import qq_face
 from . import NoticeType, ACCEPT_FORMAT
 from .message_sending import message_send_instance
 from .message_handler import message_handler
@@ -14,6 +16,7 @@ from maim_message import FormatInfo, UserInfo, GroupInfo, Seg, BaseMessageInfo, 
 
 from src.utils import (
     get_group_info,
+    get_group_member_list, 
     get_member_info,
     get_self_info,
     get_stranger_info,
@@ -86,13 +89,19 @@ class NoticeHandler:
 
         match notice_type:
             case NoticeType.friend_recall:
-                logger.info("好友撤回一条消息")
-                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{raw_message.get('time')}")
-                logger.warning("暂时不支持撤回消息处理")
+                operator_id = raw_message.get("operator_id")
+                ts = raw_message.get("time")
+                time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "未知时间"
+                logger.info(f"好友 {operator_id} 撤回一条消息")
+                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{time_str}")
+                return
             case NoticeType.group_recall:
-                logger.info("群内用户撤回一条消息")
-                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{raw_message.get('time')}")
-                logger.warning("暂时不支持撤回消息处理")
+                operator_id = raw_message.get("operator_id")
+                ts = raw_message.get("time")
+                time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "未知时间"
+                logger.info(f"群内用户 {operator_id} 撤回一条消息")
+                logger.info(f"撤回消息ID：{raw_message.get('message_id')}, 撤回时间：{time_str}")
+                return
             case NoticeType.notify:
                 sub_type = raw_message.get("sub_type")
                 match sub_type:
@@ -123,6 +132,239 @@ class NoticeHandler:
                         system_notice = True
                     case _:
                         logger.warning(f"不支持的group_ban类型: {notice_type}.{sub_type}")
+            case "group_admin":
+                sub_type = raw_message.get("sub_type")
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                self_id = raw_message.get("self_id")
+                if user_id and user_id != 0:
+                    member_info = await get_member_info(self.server_connection, group_id, user_id)
+                    nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                else:
+                    nickname = "系统"
+                if user_id == 0:
+                    try:
+                        member_list = await get_group_member_list(self.server_connection, group_id)
+                        if member_list and isinstance(member_list, list):
+                            owner = next((m for m in member_list if m.get("role") == "owner"), None)
+                            if owner:
+                                owner_id = owner.get("user_id")
+                                owner_name = owner.get("nickname") or owner.get("card") or str(owner.get("user_id"))
+                                text = f"群主变更为 {owner_name}"
+                                logger.info(f"群 {group_id} 群主变更为 {owner_id}")
+                            else:
+                                text = "群主变更"
+                                logger.error(f"群 {group_id} 群主变更（未找到新群主）")
+                        else:
+                            text = "群主变更"
+                            logger.error(f"群 {group_id} 查询群成员列表失败")
+                    except Exception as e:
+                        text = "群主变更"
+                        logger.error(f"群 {group_id} 查询新群主失败: {e}")
+                elif user_id == self_id:
+                    if sub_type == "set":
+                        text = "（你）被设置为管理员"
+                    elif sub_type == "unset":
+                        text = "（你）被取消管理员"
+                    else:
+                        text = f"管理员状态变更: {sub_type}"
+                    logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
+                else:
+                    if sub_type == "set":
+                        text = "被设置为管理员"
+                    elif sub_type == "unset":
+                        text = "被取消管理员"
+                    else:
+                        text = f"管理员状态变更: {sub_type}"
+                    logger.info(f"群 {group_id} 用户 {user_id} {text}")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
+            case "group_increase":
+                sub_type = raw_message.get("sub_type")
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                operator_id = raw_message.get("operator_id")
+                self_id = raw_message.get("self_id")
+                member_info = await get_member_info(self.server_connection, group_id, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                operator_name = "系统"
+                if operator_id and operator_id != 0:
+                    operator_info = await get_member_info(self.server_connection, group_id, operator_id)
+                    if operator_info and operator_info.get("nickname"):
+                        operator_name = operator_info.get("nickname")
+                    else:
+                        operator_name = str(operator_id)
+                if user_id == self_id:
+                    if sub_type == "invite":
+                        text = f"（你）被 {operator_name} 邀请加入"
+                        logger.info(f"群 {group_id} Bot被 {operator_id} 邀请加入")
+                    elif sub_type == "approve":
+                        text = f"（你）通过 {operator_name} 审批加入"
+                        logger.info(f"群 {group_id} Bot通过 {operator_id} 审批加入")
+                    else:
+                        text = f"（你）加入群（方式: {sub_type}）"
+                        logger.info(f"群 {group_id} Bot{text.replace('（你）', '')}")
+                else:
+                    if sub_type == "invite":
+                        text = f"被 {operator_name} 邀请加入"
+                        logger.info(f"群 {group_id} 用户 {user_id} 被 {operator_id} 邀请加入")
+                    elif sub_type == "approve":
+                        text = f"通过 {operator_name} 审批加入"
+                        logger.info(f"群 {group_id} 用户 {user_id} 被 {operator_id} 审批加入")
+                    else:
+                        text = f"加入群（方式: {sub_type}）"
+                        logger.info(f"群 {group_id} 用户 {user_id} {text}")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
+            case "group_decrease":
+                sub_type = raw_message.get("sub_type")
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                operator_id = raw_message.get("operator_id")
+                self_id = raw_message.get("self_id")
+                member_info = await get_stranger_info(self.server_connection, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                operator_name = "系统"
+                if operator_id and operator_id != 0:
+                    operator_info = await get_member_info(self.server_connection, group_id, operator_id)
+                    if operator_info and operator_info.get("nickname"):
+                        operator_name = operator_info.get("nickname")
+                    else:
+                        operator_name = str(operator_id)
+                if sub_type == "disband":
+                    nickname = operator_name
+                    text = "群已被解散"
+                    logger.info(f"群 {group_id} 已被 {operator_id} 解散")
+                elif user_id == self_id:
+                    if sub_type == "leave":
+                        text = "（你）退出了群"
+                        logger.info(f"群 {group_id} Bot退出了群")
+                    elif sub_type == "kick":
+                        text = f"（你）被 {operator_name} 移出"
+                        logger.info(f"群 {group_id} Bot被 {operator_id} 移出")
+                    else:
+                        text = f"（你）离开群（方式: {sub_type}）"
+                        logger.info(f"群 {group_id} Bot离开群（方式: {sub_type}）")
+                else:
+                    if sub_type == "leave":
+                        text = f"退出了群"
+                        logger.info(f"群 {group_id} 用户 {user_id} {text}")
+                    elif sub_type == "kick":
+                        text = f"被 {operator_name} 移出"
+                        logger.info(f"群 {group_id} 用户 {user_id} 被 {operator_id} 移出")
+                    else:
+                        text = f"离开群（方式: {sub_type}）"
+                        logger.info(f"群 {group_id} 用户 {user_id} {text}")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
+            case "essence":
+                self_id = raw_message.get("self_id")
+                group_id = raw_message.get("group_id")
+                sub_type = raw_message.get("sub_type")
+                message_id = raw_message.get("message_id")
+                operator_id = raw_message.get("operator_id")
+                sender_id = raw_message.get("sender_id", 0)
+                user_id = raw_message.get("user_id", 0)
+                operator_name = "系统"
+                if operator_id and operator_id != 0:
+                    operator_info = await get_member_info(self.server_connection, group_id, operator_id)
+                    if operator_info:
+                        operator_name = (
+                            operator_info.get("nickname")
+                            or operator_info.get("card")
+                            or str(operator_id)
+                        )
+                if sub_type == "add":
+                    if sender_id == 0:
+                        text = f"将 一条消息（ID: {message_id}）设为精华"
+                        logger.info(f"群 {group_id} 消息（ID: {message_id}）被 {operator_id} 设为精华")
+                    else:
+                        if user_id == self_id:
+                            text = f"将 {sender_name}（你）的消息设为精华"
+                            logger.info(f"群 {group_id} Bot的消息被 {operator_id} 设为精华")
+                        else:
+                            text = f"将 {sender_name} 的消息设为精华"
+                            logger.info(f"群 {group_id} 用户 {sender_id} 的消息被 {operator_id} 设为精华")
+                else:
+                    text = f"精华消息事件：{sub_type}"
+                logger.info(f"群 {group_id} 消息（ID: {message_id}）被 {operator_id} 设为精华")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=operator_id,
+                    user_nickname=operator_name,
+                    user_cardname=None,
+                )
+                system_notice = True
+            case "group_card":
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                self_id = raw_message.get("self_id")
+                member_info = await get_member_info(self.server_connection, group_id, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
+                old_card = raw_message.get("card_old") or nickname
+                new_card = raw_message.get("card_new") or "(默认)"
+                if new_card == "(默认)" or new_card == nickname:
+                    return
+                if user_id == self_id:
+                    text = f"（你）群卡片被修改为：{old_card} → {new_card}"
+                    logger.info(f"群 {group_id} Bot的群名片被修改为：{old_card} → {new_card}")
+                else:
+                    text = f"群卡片被修改为：{old_card} → {new_card}"
+                    logger.info(f"群 {group_id} 用户 {user_id} 的群名片被修改为：{old_card} → {new_card}")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=new_card,
+                )
+                system_notice = True
+            case "group_msg_emoji_like":
+                group_id = raw_message.get("group_id")
+                user_id = raw_message.get("user_id")
+                likes = raw_message.get("likes", [])
+                member_info = await get_member_info(self.server_connection, group_id, user_id)
+                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
+                emoji_list = []
+                for like in likes:
+                    emoji_id = str(like.get("emoji_id"))
+                    count = like.get("count", 1)
+                    if emoji_id in qq_face:
+                        emoji_text = qq_face[emoji_id]
+                    else:
+                        emoji_text = f"[未知表情 {emoji_id}]"
+                        logger.warning(f"不支持的表情：{emoji_id}")
+                    emoji_list.append(f"{emoji_text} ×{count}")
+                emoji_text_joined = "，".join(emoji_list) if emoji_list else "无"
+                text = f"回应了你的消息：{emoji_text_joined}"
+                logger.info(f"群 {group_id} 用户 {user_id} 回应了你的消息：{emoji_text_joined}")
+                handled_message = Seg(type="text", data=text)
+                user_info = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=user_id,
+                    user_nickname=nickname,
+                    user_cardname=None,
+                )
+                system_notice = True
             case _:
                 logger.warning(f"不支持的notice类型: {notice_type}")
                 return None
