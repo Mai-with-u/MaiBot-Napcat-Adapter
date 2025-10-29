@@ -55,11 +55,11 @@ class NoticeHandler:
             user_id = 0  # 使用0表示全体禁言
             lift_time = -1
         ban_record = BanUser(user_id=user_id, group_id=group_id, lift_time=lift_time)
-        for record in self.banned_list:
+        for idx, record in enumerate(self.banned_list):
             if is_identical(record, ban_record):
-                self.banned_list.remove(record)
+                self.banned_list.pop(idx)
                 self.banned_list.append(ban_record)
-                db_manager.create_ban_record(ban_record)  # 作为更新
+                db_manager.create_ban_record(ban_record)  # 更新数据库
                 return
         self.banned_list.append(ban_record)
         db_manager.create_ban_record(ban_record)  # 添加到数据库
@@ -71,7 +71,8 @@ class NoticeHandler:
         if user_id is None:
             user_id = 0  # 使用0表示全体禁言
         ban_record = BanUser(user_id=user_id, group_id=group_id, lift_time=-1)
-        self.lifted_list.append(ban_record)
+        if not any(is_identical(ban_record, r) for r in self.lifted_list):
+            self.lifted_list.append(ban_record)
         db_manager.delete_ban_record(ban_record)  # 删除数据库中的记录
 
     async def handle_notice(self, raw_message: dict) -> None:
@@ -105,20 +106,6 @@ class NoticeHandler:
             case NoticeType.notify:
                 sub_type = raw_message.get("sub_type")
                 match sub_type:
-                    case NoticeType.Notify.poke:
-                        if global_config.chat.enable_poke and await message_handler.check_allow_to_chat(
-                            user_id, group_id, False, False
-                        ):
-                            logger.info("处理戳一戳消息")
-                            await self.handle_poke_notify(raw_message, group_id, user_id)
-                        else:
-                            logger.warning("戳一戳消息被禁用，取消戳一戳处理")
-                        return
-                    case _:
-                        logger.warning(f"不支持的notify类型: {notice_type}.{sub_type}")
-            case NoticeType.group_ban:
-                sub_type = raw_message.get("sub_type")
-                match sub_type:
                     # 私聊输入状态（“对方正在输入...”）
                     case "input_status":
                         user_id = raw_message.get("user_id")
@@ -133,6 +120,20 @@ class NoticeHandler:
                                 status_map = {1: "正在输入中", 2: "已刷新聊天页面"}
                                 logger.info(f"用户 {user_id} {status_map.get(event_type, '输入状态变更')}")
                         return
+                    case NoticeType.Notify.poke:
+                        if global_config.chat.enable_poke and await message_handler.check_allow_to_chat(
+                            user_id, group_id, False, False
+                        ):
+                            logger.info("处理戳一戳消息")
+                            await self.handle_poke_notify(raw_message, group_id, user_id)
+                        else:
+                            logger.warning("戳一戳消息被禁用，取消戳一戳处理")
+                        return
+                    case _:
+                        logger.warning(f"不支持的notify类型: {notice_type}.{sub_type}")
+            case NoticeType.group_ban:
+                sub_type = raw_message.get("sub_type")
+                match sub_type:
                     case NoticeType.GroupBan.ban:
                         if not await message_handler.check_allow_to_chat(user_id, group_id, True, False):
                             return None
@@ -366,8 +367,8 @@ class NoticeHandler:
                     if emoji_id in qq_face:
                         emoji_text = qq_face[emoji_id]
                     else:
-                        emoji_text = f"[未知表情 {emoji_id}]"
                         logger.warning(f"不支持的表情：{emoji_id}")
+                        return None
                     emoji_list.append(f"{emoji_text} ×{count}")
                 emoji_text_joined = "，".join(emoji_list) if emoji_list else "无"
                 text = f"回应了你的消息：{emoji_text_joined}"
@@ -451,7 +452,6 @@ class NoticeHandler:
         target_name = target_info.get("nickname") if target_info and target_info.get("nickname") else "未知目标"
         sender_name = sender_info.get("nickname") if sender_info and sender_info.get("nickname") else "QQ用户"
 
-        # 解析 raw_info 文本
         text_str = ""
         if isinstance(raw_info, list) and len(raw_info) > 0:
             try:
@@ -468,8 +468,8 @@ class NoticeHandler:
             text_str = ""
 
         # ---------------------
-        # 识别动作（仅识别开头的、前后相同的 “X了X”）
-        # 例：拍了拍、戳了戳、摸了摸；不会识别“用了它”、“看了看他”等
+        # 识别动作（仅识别开头的、前后相同汉字的 “X了X”）
+        # 例：拍了拍、戳了戳、摸了摸；不会识别“用了它”、“看了看他”
         # ---------------------
         # 只在文本最前面查找一次动作
         m = re.match(r'^\s*([\u4e00-\u9fa5])了\1', text_str)
@@ -539,6 +539,7 @@ class NoticeHandler:
             return None, None
 
         # 计算user_info
+        self_id = raw_message.get("self_id")
         operator_id = raw_message.get("operator_id")
         operator_nickname: str = None
         operator_cardname: str = None
@@ -597,7 +598,51 @@ class NoticeHandler:
             },
         )
 
-        return seg_data, operator_info
+        fetched_group_info = await get_group_info(self.server_connection, group_id)
+        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+
+        # 全体禁言时不显示时间
+        if duration == -1 or user_id == 0:
+            human_time = ""
+        else:
+            # 格式化时长（天 / 时 / 分 / 秒）
+            days = duration // 86400
+            hours = (duration % 86400) // 3600
+            mins = (duration % 3600) // 60
+            secs = duration % 60
+            parts = []
+            if days > 0:
+                parts.append(f"{days} 天")
+            if hours > 0:
+                parts.append(f"{hours} 小时")
+            if mins > 0:
+                parts.append(f"{mins} 分钟")
+            if secs > 0:
+                parts.append(f"{secs} 秒")
+            human_time = " ".join(parts) if parts else "0 秒"
+
+        display_target = banned_user_info.user_nickname if banned_user_info else None
+
+        if user_id == self_id:
+            display_target = f"{display_target} (我)"
+            user = "Bot"
+        else:
+            user = f"用户 {user_id}"
+
+        if user_id == 0:
+            text_str = "开启了群禁言"
+            logger.info(f"群 {group_id} {text_str}")
+        elif human_time:
+            text_str = f"禁言了 {display_target}（{human_time}）"
+            logger.info(f"群 {group_id} {user} 被 {operator_id} 禁言（{human_time}）")
+        else:
+            text_str = f"禁言了 {display_target}"
+            logger.info(f"群 {group_id} {user} 被 {operator_id} 禁言")
+
+        text_seg = Seg(type="text", data=text_str)
+
+        notify_seg = seg_data
+        return Seg(type="seglist", data=[notify_seg, text_seg]), operator_info
 
     async def handle_lift_ban_notify(
         self, raw_message: dict, group_id: int
@@ -607,6 +652,7 @@ class NoticeHandler:
             return None, None
 
         # 计算user_info
+        self_id = raw_message.get("self_id")
         operator_id = raw_message.get("operator_id")
         operator_nickname: str = None
         operator_cardname: str = None
@@ -653,6 +699,12 @@ class NoticeHandler:
             )
             self._lift_operation(group_id, user_id)
 
+            # 防止自然检测重复触发：从 banned_list 中移除该用户
+            self.banned_list = [r for r in self.banned_list if not (r.user_id == user_id and r.group_id == group_id)]
+
+            # 避免 lifted_list 重复添加
+            self.lifted_list = [r for r in self.lifted_list if not (r.user_id == user_id and r.group_id == group_id)]
+
         seg_data: Seg = Seg(
             type="notify",
             data={
@@ -660,7 +712,21 @@ class NoticeHandler:
                 "lifted_user_info": lifted_user_info.to_dict() if lifted_user_info else None,
             },
         )
-        return seg_data, operator_info
+
+        fetched_group_info = await get_group_info(self.server_connection, group_id)
+        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+        display_target = lifted_user_info.user_nickname if lifted_user_info else None
+        if display_target and user_id == self_id:
+            display_target = f"{display_target} (我)"
+        if not display_target:
+            text_str = "解除了群禁言"
+            logger.info(f"群 {group_id} {text_str}")
+        else:
+            text_str = f"{display_target} 已被解除禁言"
+            logger.info(f"群 {group_id} 已解除 {user_id} 的禁言")
+        text_seg = Seg(type="text", data=text_str)
+        notify_seg = seg_data
+        return Seg(type="seglist", data=[notify_seg, text_seg]), operator_info
 
     async def put_notice(self, message_base: MessageBase) -> None:
         """
@@ -674,9 +740,25 @@ class NoticeHandler:
     async def handle_natural_lift(self) -> None:
         while True:
             if len(self.lifted_list) != 0:
-                lift_record = self.lifted_list.pop()
+                lift_record = self.lifted_list.pop(0)
                 group_id = lift_record.group_id
                 user_id = lift_record.user_id
+
+                # 防御：防止重复解除
+                if any(r.user_id == user_id and r.group_id == group_id for r in self.lifted_list):
+                   if user_id == 0:
+                       logger.debug(f"检测到重复解除群禁言请求（群{group_id}），跳过。")
+                   else:
+                       logger.debug(f"检测到重复解除禁言请求（群{group_id} 用户{user_id}），跳过。")
+                   continue
+
+                # 检查是否解除禁言
+                if not any(r.user_id == user_id and r.group_id == group_id for r in db_manager.get_ban_records()):
+                    if user_id == 0:
+                        logger.info(f"群 {group_id} 已解除群禁言。")
+                    else:
+                        logger.info(f"群 {group_id} 用户 {user_id} 已被解除禁言。")
+                    continue
 
                 db_manager.delete_ban_record(lift_record)  # 从数据库中删除禁言记录
 
@@ -694,11 +776,18 @@ class NoticeHandler:
                     group_name=group_name,
                 )
 
+                system_user = UserInfo(
+                    platform=global_config.maibot_server.platform_name,
+                    user_id=0,
+                    user_nickname="系统",
+                    user_cardname=None,
+                )
+                
                 message_info: BaseMessageInfo = BaseMessageInfo(
                     platform=global_config.maibot_server.platform_name,
                     message_id="notice",
                     time=time.time(),
-                    user_info=None,  # 自然解除禁言没有操作者
+                    user_info=system_user,  # 自然解除禁言没有操作者
                     group_info=group_info,
                     template_info=None,
                     format_info=None,
@@ -745,6 +834,11 @@ class NoticeHandler:
             user_nickname = fetched_member_info.get("nickname")
             user_cardname = fetched_member_info.get("card")
 
+        self_info = await get_self_info(self.server_connection)
+        self_id = self_info.get("user_id") if self_info else None
+        if self_id and user_id == self_id:
+            user_nickname = f"{user_nickname} (我)"
+        
         lifted_user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
             user_id=user_id,
@@ -752,26 +846,36 @@ class NoticeHandler:
             user_cardname=user_cardname,
         )
 
-        return Seg(
+        fetched_group_info = await get_group_info(self.server_connection, group_id)
+        group_name = fetched_group_info.get("group_name") if fetched_group_info else None
+        notify_seg = Seg(
             type="notify",
             data={
                 "sub_type": "lift_ban",
                 "lifted_user_info": lifted_user_info.to_dict(),
             },
         )
+        text_seg = Seg(type="text", data=f"解除了 {user_nickname} 的禁言")
+        logger.info(f"群 {group_id} 用户 {user_id} 的禁言被自然解除")
+        return Seg(type="seglist", data=[notify_seg, text_seg])
 
     async def auto_lift_detect(self) -> None:
         while True:
+            self_info = await get_self_info(self.server_connection)
+            self_id = self_info.get("user_id") if self_info else None
             if len(self.banned_list) == 0:
                 await asyncio.sleep(5)
                 continue
-            for ban_record in self.banned_list:
+            for ban_record in list(self.banned_list):
                 if ban_record.user_id == 0 or ban_record.lift_time == -1:
                     continue
                 if ban_record.lift_time <= int(time.time()):
-                    # 触发自然解除禁言
-                    logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
-                    self.lifted_list.append(ban_record)
+                    if ban_record not in self.lifted_list:
+                        self.lifted_list.append(ban_record)
+                        if ban_record.user_id == self_id:
+                            logger.info(f"检测到 Bot 自身在群 {ban_record.group_id} 的禁言已解除")
+                        else:
+                            logger.info(f"检测到用户 {ban_record.user_id} 在群 {ban_record.group_id} 的禁言已解除")
                     self.banned_list.remove(ban_record)
             await asyncio.sleep(5)
 
@@ -780,30 +884,37 @@ class NoticeHandler:
         发送通知消息到Napcat
         """
         while True:
-            if not unsuccessful_notice_queue.empty():
-                to_be_send: MessageBase = await unsuccessful_notice_queue.get()
+            try:
+                if not unsuccessful_notice_queue.empty():
+                    to_be_send: MessageBase = await unsuccessful_notice_queue.get()
+                    try:
+                        send_status = await message_send_instance.message_send(to_be_send)
+                        if send_status:
+                            unsuccessful_notice_queue.task_done()
+                        else:
+                            await unsuccessful_notice_queue.put(to_be_send)
+                    except Exception as e:
+                        logger.error(f"发送通知消息失败: {str(e)}")
+                        await unsuccessful_notice_queue.put(to_be_send)
+                    await asyncio.sleep(1)
+                    continue
+                to_be_send: MessageBase = await notice_queue.get()
                 try:
                     send_status = await message_send_instance.message_send(to_be_send)
                     if send_status:
-                        unsuccessful_notice_queue.task_done()
+                        notice_queue.task_done()
                     else:
                         await unsuccessful_notice_queue.put(to_be_send)
                 except Exception as e:
                     logger.error(f"发送通知消息失败: {str(e)}")
                     await unsuccessful_notice_queue.put(to_be_send)
                 await asyncio.sleep(1)
-                continue
-            to_be_send: MessageBase = await notice_queue.get()
-            try:
-                send_status = await message_send_instance.message_send(to_be_send)
-                if send_status:
-                    notice_queue.task_done()
-                else:
-                    await unsuccessful_notice_queue.put(to_be_send)
+            except asyncio.CancelledError:
+                logger.warning("send_notice 任务被取消，安全退出循环")
+                break
             except Exception as e:
-                logger.error(f"发送通知消息失败: {str(e)}")
-                await unsuccessful_notice_queue.put(to_be_send)
-            await asyncio.sleep(1)
+                logger.error(f"通知循环出现异常: {e}")
+                await asyncio.sleep(3)
 
 
 notice_handler = NoticeHandler()
