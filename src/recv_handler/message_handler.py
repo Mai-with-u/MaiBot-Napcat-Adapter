@@ -636,11 +636,11 @@ class MessageHandler:
         try:
             image_base64 = await get_image_base64(message_data.get("url"))
         except Exception as e:
-            logger.error(f"图片消息处理失败: {str(e)}")
             """如果有 summary 就返回 summary 内容"""
             summary = re.sub(r"[\[\]]", "", summary)
             if summary:
                  return Seg(type="text", data=f"[表情包：{summary}]")
+            logger.error(f"图片消息处理失败: {str(e)}")
             return None
         if image_sub_type == 0 and not file.lower().endswith(".gif"):
             """这部分认为是图片"""
