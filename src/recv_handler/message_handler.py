@@ -383,7 +383,7 @@ class MessageHandler:
                             gift = meta.get("giftData", {})
                             gift_name = gift.get("giftName", "未知礼物")
                             gift_msg = gift.get("giftMsg", "")
-                            seg_message.append(Seg(type="text", data=f"[收到礼物] {gift_name}：{gift_msg}"))
+                            seg_message.append(Seg(type="text", data=f"[收到礼物] {gift_name}:{gift_msg}"))
 
                         # 推荐联系人
                         elif app_name == "com.tencent.contact.lua":
@@ -408,7 +408,7 @@ class MessageHandler:
                             preview_url = news.get("preview", "")
                             if tag and title and tag in title:
                                 title = title.replace(tag, "", 1).strip("：: -— ")
-                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}:{desc}"))
                             if preview_url:
                                 try:
                                     image_base64 = await get_image_base64(preview_url)
@@ -425,7 +425,7 @@ class MessageHandler:
                             cover_url = feed.get("cover", "")
                             if tag and title and tag in title:
                                 title = title.replace(tag, "", 1).strip("：: -— ")
-                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}:{desc}"))
                             if cover_url:
                                 try:
                                     image_base64 = await get_image_base64(cover_url)
@@ -448,7 +448,7 @@ class MessageHandler:
                                 except Exception as e:
                                     logger.warning(f"群公告Base64解码失败: {e}")
                             if title and text:
-                                content = f"[{title}]：{text}"
+                                content = f"[{title}]:{text}"
                             elif title:
                                 content = f"[{title}]"
                             elif text:
@@ -464,7 +464,7 @@ class MessageHandler:
                             desc = detail.get("desc", "")
                             preview_url = detail.get("preview", "")
                             tag = "QQ小程序"
-                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}:{desc}"))
                             if preview_url:
                                 try:
                                     image_base64 = await get_image_base64(preview_url)
@@ -499,6 +499,32 @@ class MessageHandler:
                                     seg_message.append(Seg(type="image", data=image_base64))
                                 except Exception as e:
                                     logger.error(f"QQ空间图片下载失败: {e}")
+
+                        # QQ频道分享（含预览图）
+                        elif app_name == "com.tencent.forum":
+                            detail = meta.get("detail") if isinstance(meta, dict) else None
+                            if detail:
+                                feed = detail.get("feed", {})
+                                poster = detail.get("poster", {})
+                                channel_info = detail.get("channel_info", {})
+                                guild_name = channel_info.get("guild_name", "")
+                                nick = poster.get("nick", "QQ用户")
+                                title = feed.get("title", {}).get("contents", [{}])[0].get("text_content", {}).get("text", "帖子")
+                                face_content = ""
+                                for item in feed.get("contents", {}).get("contents", []):
+                                    emoji = item.get("emoji_content")
+                                    if emoji:
+                                        eid = emoji.get("id")
+                                        if eid in qq_face:
+                                            face_content += qq_face.get(eid, "")
+                                pic_urls = [img.get("pic_url") for img in feed.get("images", []) if img.get("pic_url")]
+                                seg_message.append(Seg(type="text", data=f"[频道帖子] [{guild_name}]{nick}:{title}{face_content}"))
+                                for pic_url in pic_urls:
+                                    try:
+                                        image_base64 = await get_image_base64(pic_url)
+                                        seg_message.append(Seg(type="image", data=image_base64))
+                                    except Exception as e:
+                                        logger.error(f"QQ频道图片下载失败: {e}")
 
                         # QQ地图位置分享
                         elif app_name == "com.tencent.map":
@@ -554,7 +580,7 @@ class MessageHandler:
                             if not desc:
                                 desc = ""
                             
-                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}：{desc}"))
+                            seg_message.append(Seg(type="text", data=f"[{tag}] {title}:{desc}"))
 
                         # 未识别类型
                         else:
