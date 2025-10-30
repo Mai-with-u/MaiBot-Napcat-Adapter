@@ -153,11 +153,12 @@ class NoticeHandler:
                 group_id = raw_message.get("group_id")
                 user_id = raw_message.get("user_id")
                 self_id = raw_message.get("self_id")
+                member_info = await get_member_info(self.server_connection, group_id, user_id) if user_id != 0 else None
+                user_cardname = member_info.get("card") if member_info else None
                 if user_id and user_id != 0:
-                    member_info = await get_member_info(self.server_connection, group_id, user_id)
-                    nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                    user_nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
                 else:
-                    nickname = "系统"
+                    user_nickname = "系统"
                 if user_id == 0:
                     try:
                         member_list = await get_group_member_list(self.server_connection, group_id)
@@ -197,18 +198,19 @@ class NoticeHandler:
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
                     user_id=user_id,
-                    user_nickname=nickname,
-                    user_cardname=None,
+                    user_nickname=user_nickname,
+                    user_cardname=user_cardname,
                 )
                 system_notice = True
             case "group_increase":
                 sub_type = raw_message.get("sub_type")
                 group_id = raw_message.get("group_id")
                 user_id = raw_message.get("user_id")
-                operator_id = raw_message.get("operator_id")
                 self_id = raw_message.get("self_id")
-                member_info = await get_member_info(self.server_connection, group_id, user_id)
-                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                operator_id = raw_message.get("operator_id")
+                member_info = await get_member_info(self.server_connection, group_id, user_id) if user_id != 0 else None
+                user_cardname = member_info.get("card") if member_info else None
+                user_nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
                 operator_name = "系统"
                 if operator_id and operator_id != 0:
                     operator_info = await get_member_info(self.server_connection, group_id, operator_id)
@@ -240,18 +242,16 @@ class NoticeHandler:
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
                     user_id=user_id,
-                    user_nickname=nickname,
-                    user_cardname=None,
+                    user_nickname=user_nickname,
+                    user_cardname=user_cardname,
                 )
                 system_notice = True
             case "group_decrease":
                 sub_type = raw_message.get("sub_type")
                 group_id = raw_message.get("group_id")
                 user_id = raw_message.get("user_id")
-                operator_id = raw_message.get("operator_id")
                 self_id = raw_message.get("self_id")
-                member_info = await get_stranger_info(self.server_connection, user_id)
-                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
+                operator_id = raw_message.get("operator_id")
                 operator_name = "系统"
                 if operator_id and operator_id != 0:
                     operator_info = await get_member_info(self.server_connection, group_id, operator_id)
@@ -260,7 +260,7 @@ class NoticeHandler:
                     else:
                         operator_name = str(operator_id)
                 if sub_type == "disband":
-                    nickname = operator_name
+                    user_id = operator_id
                     text = "群已被解散"
                     logger.info(f"群 {group_id} 已被 {operator_id} 解散")
                 elif user_id == self_id:
@@ -283,12 +283,15 @@ class NoticeHandler:
                     else:
                         text = f"离开群（方式: {sub_type}）"
                         logger.info(f"群 {group_id} 用户 {user_id} {text}")
+                member_info = await get_stranger_info(self.server_connection, user_id) if user_id != 0 else None
+                user_cardname = member_info.get("card") if member_info else None
+                user_nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else "QQ用户"
                 handled_message = Seg(type="text", data=text)
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
                     user_id=user_id,
-                    user_nickname=nickname,
-                    user_cardname=None,
+                    user_nickname=user_nickname,
+                    user_cardname=user_cardname,
                 )
                 system_notice = True
             case "essence":
@@ -299,19 +302,26 @@ class NoticeHandler:
                 operator_id = raw_message.get("operator_id")
                 sender_id = raw_message.get("sender_id", 0)
                 user_id = raw_message.get("user_id", 0)
+                member_info = await get_stranger_info(self.server_connection, user_id) if user_id != 0 else None
+                user_cardname = member_info.get("card") if member_info else None
                 operator_name = "系统"
                 if operator_id and operator_id != 0:
                     operator_info = await get_member_info(self.server_connection, group_id, operator_id)
                     if operator_info:
-                        operator_name = (
-                            operator_info.get("nickname")
-                            or operator_info.get("card")
-                            or str(operator_id)
-                        )
+                        operator_name = operator_info.get("nickname") or operator_info.get("card") or str(operator_id)
+                sender_name = "QQ用户"
+                if sender_id != 0:
+                    sender_info = await get_member_info(self.server_connection, group_id, sender_id)
+                    if sender_info:
+                        sender_name = sender_info.get("nickname") or sender_info.get("card") or str(sender_id)
                 if sub_type == "add":
                     if sender_id == 0:
-                        text = f"将 一条消息（ID: {message_id}）设为精华"
-                        logger.info(f"群 {group_id} 消息（ID: {message_id}）被 {operator_id} 设为精华")
+                        if message_id:
+                            ID = f"（ID: {message_id}）"
+                        else:
+                            ID = " " 
+                        text = f"将 一条消息{ID}设为精华"
+                        logger.info(f"群 {group_id} 一条消息{ID}被 {operator_id} 设为精华")
                     else:
                         if user_id == self_id:
                             text = f"将 {sender_name}（你）的消息设为精华"
@@ -321,24 +331,23 @@ class NoticeHandler:
                             logger.info(f"群 {group_id} 用户 {sender_id} 的消息被 {operator_id} 设为精华")
                 else:
                     text = f"精华消息事件：{sub_type}"
-                logger.info(f"群 {group_id} 消息（ID: {message_id}）被 {operator_id} 设为精华")
                 handled_message = Seg(type="text", data=text)
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
                     user_id=operator_id,
                     user_nickname=operator_name,
-                    user_cardname=None,
+                    user_cardname=user_cardname,
                 )
                 system_notice = True
             case "group_card":
                 group_id = raw_message.get("group_id")
                 user_id = raw_message.get("user_id")
                 self_id = raw_message.get("self_id")
-                member_info = await get_member_info(self.server_connection, group_id, user_id)
-                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
-                old_card = raw_message.get("card_old") or nickname
+                member_info = await get_member_info(self.server_connection, group_id, user_id) if user_id != 0 else None
+                user_nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
+                old_card = raw_message.get("card_old") or user_nickname
                 new_card = raw_message.get("card_new") or "(默认)"
-                if new_card == "(默认)" or new_card == nickname:
+                if new_card == "(默认)" or new_card == user_nickname:
                     return
                 if user_id == self_id:
                     text = f"（你）群卡片被修改为：{old_card} → {new_card}"
@@ -350,7 +359,7 @@ class NoticeHandler:
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
                     user_id=user_id,
-                    user_nickname=nickname,
+                    user_nickname=user_nickname,
                     user_cardname=new_card,
                 )
                 system_notice = True
@@ -358,8 +367,9 @@ class NoticeHandler:
                 group_id = raw_message.get("group_id")
                 user_id = raw_message.get("user_id")
                 likes = raw_message.get("likes", [])
-                member_info = await get_member_info(self.server_connection, group_id, user_id)
-                nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
+                member_info = await get_member_info(self.server_connection, group_id, user_id) if user_id != 0 else None
+                user_cardname = member_info.get("card") if member_info else None
+                user_nickname = member_info.get("nickname") if member_info and member_info.get("nickname") else str(user_id)
                 emoji_list = []
                 for like in likes:
                     emoji_id = str(like.get("emoji_id"))
@@ -377,8 +387,8 @@ class NoticeHandler:
                 user_info = UserInfo(
                     platform=global_config.maibot_server.platform_name,
                     user_id=user_id,
-                    user_nickname=nickname,
-                    user_cardname=None,
+                    user_nickname=user_nickname,
+                    user_cardname=user_cardname,
                 )
                 system_notice = True
             case _:
