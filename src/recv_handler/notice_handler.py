@@ -216,7 +216,7 @@ class NoticeHandler:
                 display_name = user_name
             else:
                 return None, None
-        
+        #提前构造User info
         user_info: UserInfo = UserInfo(
             platform=global_config.maibot_server.platform_name,
             user_id=user_id,
@@ -229,21 +229,24 @@ class NoticeHandler:
         action: str = "戳了戳"
         second_txt: str = ""    
         submit_notice_seg: Seg = None
-        
+        #catch意外越界error（TODO：减少try catch使用，尝试通过比较元素数量直接判断，napcat的raw info普通戳一戳包含5个元素， 自戳与特殊戳一戳包含四个元素（因为没有“戳一戳”、“拍一拍”等文字描述）
         try:
+            #判断是否为特殊戳一戳
             if raw_info[2].get("type") == "qq":
                 """
-                #可选不处理任意用户自戳
+                #可选不处理任意用户自戳， 自戳tp项参数为1
                 if raw_info[2].get("tp") == "1":
                     logger.info("不处理用户自戳")
                     return None, None
                 """
+                #获取并处理戳一戳动图
                 try:
                     image_base64 = await get_image_base64(raw_info[1].get("src"))
                     acton_seg = Seg(type="emoji", data=image_base64)
                 except Exception as e:
                     logger.error(f"会员/活动戳一戳动图处理失败: {str(e)}")
                     acton_seg = Seg(type=RealMessageType.text, data="戳了戳")
+                
                 second_txt = raw_info[3].get("txt", "")
                 suffix: str = f"{target_name}{second_txt}"
         
@@ -257,23 +260,18 @@ class NoticeHandler:
                 )
                 return submit_notice_seg, user_info        
             else:
+                #可选不处理使用bot账号进行的自戳，自戳tp项参数为1
                 if raw_info[3].get("tp") == "1":
                     logger.info("不处理bot自戳")
                     return None, None
                 action = raw_info[2].get("txt", "戳了戳")
                 second_txt = raw_info[4].get("txt", "")
-            #Lagrange poke
-            #logger.info(f"action:{action}")
-            #logger.info(f"suffix:{second_txt}")
-            #action = raw_message.get("action", "戳了戳")
-            #second_txt = raw_message.get("suffix", "")
         except Exception as e:
             logger.warning(f"解析戳一戳消息失败: {str(e)}，将使用默认文本")
         
         submit_notice_seg = Seg(
             type="text",
             data=f"{display_name}{action}{target_name}{second_txt}（这是QQ的一个功能，用于提及某人，但没那么明显）",
-            #data=f"{display_name}{action}{target_name}{second_txt}",
         )
         return submit_notice_seg, user_info
 
