@@ -225,7 +225,7 @@ class NoticeHandler:
         )
         
         seg_data: List[Seg] = []
-        acton_seg: Seg = Seg(type=RealMessageType.text, data="戳了戳")
+        acton_seg: Seg = Seg(type="text", data="戳了戳")
         action: str = "戳了戳"
         second_txt: str = ""    
         submit_notice_seg: Seg = None
@@ -245,14 +245,14 @@ class NoticeHandler:
                     acton_seg = Seg(type="emoji", data=image_base64)
                 except Exception as e:
                     logger.error(f"会员/活动戳一戳动图处理失败: {str(e)}")
-                    acton_seg = Seg(type=RealMessageType.text, data="戳了戳")
+                    acton_seg = Seg(type="text", data="戳了戳")
                 
                 second_txt = raw_info[3].get("txt", "")
                 suffix: str = f"{target_name}{second_txt}"
         
-                seg_data.append(Seg(type=RealMessageType.text, data=display_name))
+                seg_data.append(Seg(type="text", data=display_name))
                 seg_data.append(acton_seg)
-                seg_data.append(Seg(type=RealMessageType.text, data=suffix))
+                seg_data.append(Seg(type="text", data=suffix))
                 
                 submit_notice_seg = Seg(
                     type="seglist",
