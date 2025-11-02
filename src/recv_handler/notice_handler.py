@@ -17,6 +17,7 @@ from src.utils import (
     get_member_info,
     get_self_info,
     get_stranger_info,
+    get_image_base64,
     read_ban_list,
 )
 
