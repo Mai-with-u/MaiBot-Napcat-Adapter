@@ -56,6 +56,8 @@ class RealMessageType:  # 实际消息分类
     reply = "reply"  # 回复消息
     forward = "forward"  # 转发消息
     node = "node"  # 转发消息节点
+    json = "json"  # 转发json
+    file = "file"  # 转发文件信息
 
 
 class MessageSentType:
