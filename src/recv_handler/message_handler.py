@@ -521,6 +521,22 @@ class MessageHandler:
                 
                 return Seg(type="text", data=announce_text)
             
+            # 检查是否为音乐卡片
+            if app == "com.tencent.music.lua" or app == "com.tencent.structmsg":
+                meta = parsed_json.get("meta", {})
+                music = meta.get("music", {})
+                
+                # 尝试从music字段提取信息
+                if music:
+                    title = music.get("title", "")
+                    singer = music.get("singer", "")
+                    music_text = "[音乐卡片]"
+                    if title:
+                        music_text += f"\n歌曲: {title}"
+                    if singer:
+                        music_text += f"\n歌手: {singer}"
+                    return Seg(type="text", data=music_text)
+            
             # 其他卡片消息使用prompt字段
             prompt = parsed_json.get("prompt", "[卡片消息]")
             return Seg(type="text", data=prompt)
