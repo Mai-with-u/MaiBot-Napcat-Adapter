@@ -632,7 +632,7 @@ class MessageHandler:
             return None, {}
         reply_message, _ = await self.handle_real_message(message_detail, in_reply=True)
         if reply_message is None:
-            reply_message = "(获取发言内容失败)"
+            reply_message = [Seg(type="text", data="(获取发言内容失败)")]
         sender_info: dict = message_detail.get("sender")
         sender_nickname: str = sender_info.get("nickname")
         sender_id: str = sender_info.get("user_id")
