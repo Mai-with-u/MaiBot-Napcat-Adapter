@@ -15,6 +15,6 @@ WORKDIR /adapters
 
 COPY . .
 
-EXPOSE 8095
+EXPOSE 8095 8096
 
 ENTRYPOINT ["python", "main.py"]

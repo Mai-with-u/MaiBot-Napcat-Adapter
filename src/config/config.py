@@ -18,6 +18,7 @@ from src.config.official_configs import (
     NapcatServerConfig,
     NicknameConfig,
     VoiceConfig,
+    WebUIConfig,
 )
 
 install(extra_lines=3)
@@ -118,6 +119,7 @@ class Config(ConfigBase):
     chat: ChatConfig
     voice: VoiceConfig
     debug: DebugConfig
+    web_ui: WebUIConfig = None  # 可选配置，向后兼容
 
 
 def load_config(config_path: str) -> Config:

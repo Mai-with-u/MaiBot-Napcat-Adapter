@@ -12,6 +12,7 @@ from src.send_handler.nc_sending import nc_message_sender
 from src.config import global_config
 from src.mmc_com_layer import mmc_start_com, mmc_stop_com, router
 from src.response_pool import put_response, check_timeout_response
+from src.webui import start_webui, stop_webui
 
 message_queue = asyncio.Queue()
 
@@ -48,7 +49,7 @@ async def message_process():
 
 async def main():
     message_send_instance.maibot_router = router
-    _ = await asyncio.gather(napcat_server(), mmc_start_com(), message_process(), check_timeout_response())
+    _ = await asyncio.gather(napcat_server(), mmc_start_com(), message_process(), check_timeout_response(), start_webui())
 
 def check_napcat_server_token(conn, request):
     token = global_config.napcat_server.token
@@ -80,6 +81,7 @@ async def graceful_shutdown():
             if not task.done():
                 task.cancel()
         await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 15)
+        await stop_webui()  # 停止 WebUI
         await mmc_stop_com()  # 后置避免神秘exception
         logger.info("Adapter已成功关闭")
     except Exception as e:

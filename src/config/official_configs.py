@@ -59,7 +59,7 @@ class ChatConfig(ConfigBase):
     """私聊列表类型 白名单/黑名单"""
 
     private_list: list[int] = field(default_factory=[])
-    """私聊列表"""
+    """e"""
 
     ban_user_id: list[int] = field(default_factory=[])
     """被封禁的用户ID列表，封禁后将无法与其进行交互"""
@@ -81,3 +81,18 @@ class VoiceConfig(ConfigBase):
 class DebugConfig(ConfigBase):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     """日志级别，默认为INFO"""
+
+
+@dataclass
+class WebUIConfig(ConfigBase):
+    enable: bool = True
+    """是否启用 WebUI"""
+
+    token: str = ""
+    """WebUI访问令牌，若为空则无需验证"""
+
+    host: str = "0.0.0.0"
+    """WebUI监听地址"""
+
+    port: int = 8096
+    """WebUI端口"""
