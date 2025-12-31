@@ -77,6 +77,22 @@ def get_index_html() -> str:
             border-color: #667eea;
         }
         
+        .form-group input[type="password"],
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input[type="password"]:focus,
+        .form-group input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
         .list-container {
             background: #f8f9fa;
             border-radius: 8px;
@@ -154,6 +170,28 @@ def get_index_html() -> str:
             background: #5a6fd6;
         }
         
+        .login-btn {
+            width: 100%;
+            padding: 14px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        
+        .login-btn:hover {
+            background: #5a6fd6;
+        }
+        
+        .login-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
         .status {
             position: fixed;
             top: 20px;
@@ -192,10 +230,46 @@ def get_index_html() -> str:
             font-style: italic;
             padding: 10px 0;
         }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+        }
+        
+        .login-container .card {
+            text-align: center;
+        }
+        
+        .login-container h2 {
+            border-bottom: none !important;
+        }
+        
+        .login-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- 登录界面 -->
+    <div id="login-page" class="login-container hidden">
+        <h1>🤖 MaiBot Adapter</h1>
+        <div class="card">
+            <div class="login-icon">🔐</div>
+            <h2>请输入访问令牌</h2>
+            <div class="form-group">
+                <input type="password" id="token-input" placeholder="输入 Token" onkeypress="if(event.key==='Enter') login()" />
+            </div>
+            <button class="login-btn" onclick="login()">登录</button>
+        </div>
+    </div>
+    
+    <!-- 主界面 -->
+    <div id="main-page" class="container hidden">
         <h1>🤖 MaiBot Adapter 配置管理</h1>
         
         <div class="card">
@@ -255,11 +329,125 @@ def get_index_html() -> str:
             private_list: []
         };
         
+        // 获取存储的 token
+        function getStoredToken() {
+            return localStorage.getItem('webui_token') || '';
+        }
+        
+        // 存储 token
+        function storeToken(token) {
+            localStorage.setItem('webui_token', token);
+        }
+        
+        // 清除 token
+        function clearToken() {
+            localStorage.removeItem('webui_token');
+        }
+        
+        // 获取带认证的 headers
+        function getAuthHeaders() {
+            const token = getStoredToken();
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
+            return headers;
+        }
+        
+        // 显示登录页面
+        function showLoginPage() {
+            document.getElementById('login-page').classList.remove('hidden');
+            document.getElementById('main-page').classList.add('hidden');
+        }
+        
+        // 显示主页面
+        function showMainPage() {
+            document.getElementById('login-page').classList.add('hidden');
+            document.getElementById('main-page').classList.remove('hidden');
+        }
+        
+        // 检查认证状态
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/auth/check', {
+                    headers: getAuthHeaders()
+                });
+                const data = await response.json();
+                
+                if (!data.required) {
+                    // 不需要认证
+                    showMainPage();
+                    await loadConfig();
+                } else if (data.valid) {
+                    // 需要认证且当前 token 有效
+                    showMainPage();
+                    await loadConfig();
+                } else {
+                    // 需要认证但 token 无效
+                    clearToken();
+                    showLoginPage();
+                }
+            } catch (error) {
+                showStatus('检查认证状态失败: ' + error.message, 'error');
+                showLoginPage();
+            }
+        }
+        
+        // 登录
+        async function login() {
+            const tokenInput = document.getElementById('token-input');
+            const token = tokenInput.value.trim();
+            
+            if (!token) {
+                showStatus('请输入 Token', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    storeToken(token);
+                    showStatus('登录成功', 'success');
+                    tokenInput.value = '';
+                    showMainPage();
+                    await loadConfig();
+                } else {
+                    showStatus(data.message || 'Token 错误', 'error');
+                }
+            } catch (error) {
+                showStatus('登录失败: ' + error.message, 'error');
+            }
+        }
+        
         // 加载配置
         async function loadConfig() {
             try {
-                const response = await fetch('/api/config');
-                config = await response.json();
+                const response = await fetch('/api/config', {
+                    headers: getAuthHeaders()
+                });
+                
+                if (response.status === 401) {
+                    // 未授权，跳转到登录页
+                    clearToken();
+                    showLoginPage();
+                    showStatus('登录已过期，请重新登录', 'error');
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (data.success === false) {
+                    showStatus('加载配置失败: ' + (data.error || '未知错误'), 'error');
+                    return;
+                }
+                
+                config = data;
                 renderConfig();
             } catch (error) {
                 showStatus('加载配置失败: ' + error.message, 'error');
@@ -269,18 +457,18 @@ def get_index_html() -> str:
         // 渲染配置
         function renderConfig() {
             // 设置选择框
-            document.getElementById('group_list_type').value = config.group_list_type;
-            document.getElementById('private_list_type').value = config.private_list_type;
+            document.getElementById('group_list_type').value = config.group_list_type || 'whitelist';
+            document.getElementById('private_list_type').value = config.private_list_type || 'whitelist';
             
             // 渲染列表
-            renderList('group_list', config.group_list);
-            renderList('private_list', config.private_list);
+            renderList('group_list', config.group_list || []);
+            renderList('private_list', config.private_list || []);
         }
         
         // 渲染列表
         function renderList(listId, items) {
             const container = document.getElementById(listId);
-            if (items.length === 0) {
+            if (!items || items.length === 0) {
                 container.innerHTML = '<div class="empty-list">列表为空</div>';
             } else {
                 container.innerHTML = items.map(item => `
@@ -297,9 +485,17 @@ def get_index_html() -> str:
             try {
                 const response = await fetch('/api/config', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ field, value })
                 });
+                
+                if (response.status === 401) {
+                    clearToken();
+                    showLoginPage();
+                    showStatus('登录已过期，请重新登录', 'error');
+                    return;
+                }
+                
                 const result = await response.json();
                 if (result.success) {
                     config = result.config;
@@ -324,7 +520,7 @@ def get_index_html() -> str:
                 return;
             }
             
-            const list = [...config[listId]];
+            const list = [...(config[listId] || [])];
             if (list.includes(value)) {
                 showStatus('该项已存在', 'error');
                 return;
@@ -337,7 +533,7 @@ def get_index_html() -> str:
         
         // 删除项目
         function removeItem(listId, value) {
-            const list = config[listId].filter(item => item !== value);
+            const list = (config[listId] || []).filter(item => item !== value);
             updateConfig(listId, list);
         }
         
@@ -351,8 +547,8 @@ def get_index_html() -> str:
             }, 3000);
         }
         
-        // 页面加载时获取配置
-        loadConfig();
+        // 页面加载时检查认证状态
+        checkAuth();
     </script>
 </body>
 </html>'''

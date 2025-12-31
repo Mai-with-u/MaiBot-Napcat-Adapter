@@ -12,24 +12,41 @@ from .routes import setup_routes
 _runner: Optional[web.AppRunner] = None
 _site: Optional[web.TCPSite] = None
 
-# WebUI 配置
-WEBUI_HOST = "0.0.0.0"
-WEBUI_PORT = 8096
+
+def get_webui_config():
+    """获取 WebUI 配置"""
+    if global_config.web_ui:
+        return global_config.web_ui.host, global_config.web_ui.port
+    return "0.0.0.0", 8096  # 默认值
+
+
+def is_webui_enabled() -> bool:
+    """检查 WebUI 是否启用"""
+    if global_config.web_ui:
+        return global_config.web_ui.enable
+    return True  # 默认启用
 
 
 async def start_webui():
     """启动 WebUI 服务"""
     global _runner, _site
 
+    # 检查是否启用 WebUI
+    if not is_webui_enabled():
+        logger.info("WebUI 已禁用，跳过启动")
+        return
+
+    host, port = get_webui_config()
+
     app = web.Application()
     setup_routes(app)
 
     _runner = web.AppRunner(app)
     await _runner.setup()
-    _site = web.TCPSite(_runner, WEBUI_HOST, WEBUI_PORT)
+    _site = web.TCPSite(_runner, host, port)
     await _site.start()
 
-    logger.info(f"WebUI 已启动，访问地址: http://{WEBUI_HOST}:{WEBUI_PORT}")
+    logger.info(f"WebUI 已启动，访问地址: http://{host}:{port}")
 
 
 async def stop_webui():

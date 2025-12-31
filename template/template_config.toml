@@ -33,3 +33,9 @@ use_tts = false # 是否使用tts语音（请确保你配置了tts并有对应�
 
 [debug]
 level = "INFO" # 日志等级（DEBUG, INFO, WARNING, ERROR, CRITICAL）
+
+[web_ui] # WebUI 配置管理界面
+enable = true          # 是否启用 WebUI
+token = ""             # 访问令牌，若为空则无需验证
+host = "localhost"     # WebUI监听地址
+port = 8096            # WebUI端口
