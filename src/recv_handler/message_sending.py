@@ -1,4 +1,5 @@
 from typing import Dict
+import json
 from src.logger import logger
 from maim_message import MessageBase, Router
 
@@ -20,9 +21,18 @@ class MessageSending:
             message_base: MessageBase: 消息基类，包含发送目标和消息内容等信息
         """
         try:
+            # 计算消息大小用于调试
+            msg_dict = message_base.to_dict()
+            msg_json = json.dumps(msg_dict, ensure_ascii=False)
+            msg_size_kb = len(msg_json.encode('utf-8')) / 1024
+            logger.debug(f"发送消息大小: {msg_size_kb:.2f} KB")
+            if msg_size_kb > 1024:  # 超过 1MB 时警告
+                logger.warning(f"发送的消息较大 ({msg_size_kb:.2f} KB)，可能导致传输问题")
+            
             send_status = await self.maibot_router.send_message(message_base)
             if not send_status:
                 raise RuntimeError("可能是路由未正确配置或连接异常")
+            logger.debug("消息发送成功")
             return send_status
         except Exception as e:
             logger.error(f"发送消息失败: {str(e)}")
