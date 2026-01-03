@@ -216,12 +216,61 @@ class SendMessageHandleClass:
         }
 
     @staticmethod
-    def handle_file_message(file_path: str) -> dict:
-        """处理文件消息"""
-        return {
-            "type": "file",
-            "data": {"file": f"file://{file_path}"},
-        }
+    def handle_file_message(file_data) -> dict:
+        """处理文件消息
+        
+        Args:
+            file_data: 可以是字符串（文件路径）或字典（完整文件信息）
+                - 字符串：简单的文件路径
+                - 字典：包含 file, name, path, thumb, url 等字段
+        
+        Returns:
+            NapCat 格式的文件消息段
+        """
+        # 如果是简单的字符串路径（兼容旧版本）
+        if isinstance(file_data, str):
+            return {
+                "type": "file",
+                "data": {"file": f"file://{file_data}"},
+            }
+        
+        # 如果是完整的字典数据
+        if isinstance(file_data, dict):
+            data = {}
+            
+            # file 字段是必需的
+            if "file" in file_data:
+                file_value = file_data["file"]
+                # 如果是本地路径且没有协议前缀，添加 file:// 前缀
+                if not any(file_value.startswith(prefix) for prefix in ["file://", "http://", "https://", "base64://"]):
+                    data["file"] = f"file://{file_value}"
+                else:
+                    data["file"] = file_value
+            else:
+                # 没有 file 字段，尝试使用 path 或 url
+                if "path" in file_data:
+                    data["file"] = f"file://{file_data['path']}"
+                elif "url" in file_data:
+                    data["file"] = file_data["url"]
+                else:
+                    logger.warning("文件消息缺少必要的 file/path/url 字段")
+                    return None
+            
+            # 添加可选字段
+            if "name" in file_data:
+                data["name"] = file_data["name"]
+            if "thumb" in file_data:
+                data["thumb"] = file_data["thumb"]
+            if "url" in file_data and "file" not in file_data:
+                data["file"] = file_data["url"]
+            
+            return {
+                "type": "file",
+                "data": data,
+            }
+        
+        logger.warning(f"不支持的文件数据类型: {type(file_data)}")
+        return None
 
     @staticmethod
     def handle_imageurl_message(image_url: str) -> dict:

@@ -25,14 +25,26 @@ class MetaEventHandler:
                 logger.success(f"Bot {self_id} 连接成功")
                 asyncio.create_task(self.check_heartbeat(self_id))
         elif event_type == MetaEventType.heartbeat:
-            if message["status"].get("online") and message["status"].get("good"):
+            self_id = message.get("self_id")
+            status = message.get("status", {})
+            is_online = status.get("online", False)
+            is_good = status.get("good", False)
+            
+            if is_online and is_good:
+                # 正常心跳
                 if not self._interval_checking:
-                    asyncio.create_task(self.check_heartbeat())
+                    asyncio.create_task(self.check_heartbeat(self_id))
                 self.last_heart_beat = time.time()
-                self.interval = message.get("interval") / 1000
+                self.interval = message.get("interval", 30000) / 1000
             else:
-                self_id = message.get("self_id")
-                logger.warning(f"Bot {self_id} Napcat 端异常！")
+                # Bot 离线或状态异常
+                if not is_online:
+                    logger.error(f"🔴 Bot {self_id} 已下线 (online=false)")
+                    logger.warning("Bot 可能被踢下线、网络断开或主动退出登录")
+                elif not is_good:
+                    logger.warning(f"⚠️ Bot {self_id} 状态异常 (good=false)")
+                else:
+                    logger.warning(f"Bot {self_id} Napcat 端异常！")
 
     async def check_heartbeat(self, id: int) -> None:
         self._interval_checking = True
