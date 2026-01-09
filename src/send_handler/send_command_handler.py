@@ -386,8 +386,8 @@ class SendCommandHandleClass:
         )
 
     @staticmethod
-    @register_command(CommandType.MESSAGE_LIKE, require_group=False)
-    def handle_message_like_command(args: Dict[str, Any], group_info: Optional[GroupInfo]) -> Tuple[str, Dict[str, Any]]:
+    @register_command(CommandType.SET_MSG_EMOJI_LIKE, require_group=False)
+    def handle_set_msg_emoji_like_command(args: Dict[str, Any], group_info: Optional[GroupInfo]) -> Tuple[str, Dict[str, Any]]:
         """处理给消息贴表情命令
 
         Args:
@@ -415,7 +415,7 @@ class SendCommandHandleClass:
             raise ValueError("表情ID无效")
 
         return (
-            CommandType.MESSAGE_LIKE.value,
+            CommandType.SET_MSG_EMOJI_LIKE.value,
             {
                 "message_id": message_id,
                 "emoji_id": emoji_id,

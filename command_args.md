@@ -101,7 +101,7 @@ Seg.data: Dict[str, Any] = {
 ### 给消息贴表情
 ```python
 Seg.data: Dict[str, Any] = {
-    "name": "MESSAGE_LIKE",
+    "name": "SET_MSG_EMOJI_LIKE",
     "args": {
         "message_id": "消息ID",
         "emoji_id": "表情ID"
