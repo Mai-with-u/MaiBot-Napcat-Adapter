@@ -278,3 +278,5 @@ test
 data/NapcatAdapter.db
 data/NapcatAdapter.db-shm
 data/NapcatAdapter.db-wal
+
+uv.lock
