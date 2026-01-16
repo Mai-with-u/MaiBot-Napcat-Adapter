@@ -16,7 +16,7 @@ class CommandType(Enum):
     SEND_POKE = "send_poke"  # 戳一戳
     DELETE_MSG = "delete_msg"  # 撤回消息
     AI_VOICE_SEND = "send_group_ai_record"  # 发送群AI语音
-    MESSAGE_LIKE = "message_like"  # 给消息贴表情
+    SET_MSG_EMOJI_LIKE = "set_msg_emoji_like"  # 给消息贴表情
     SET_QQ_PROFILE = "set_qq_profile"  # 设置账号信息
     
     # 查询类命令
