@@ -46,6 +46,15 @@ class MaiBotServerConfig(ConfigBase):
     port: int = 8000
     """MaiMCore的端口号"""
 
+    enable_api_server: bool = False
+    """是否启用API-Server模式连接"""
+
+    base_url: str = ""
+    """API-Server连接地址 (ws://ipp:port/path)"""
+
+    api_key: str = ""
+    """API Key (仅在enable_api_server为True时使用)"""
+
 
 @dataclass
 class ChatConfig(ConfigBase):

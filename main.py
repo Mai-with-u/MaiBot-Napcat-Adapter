@@ -116,8 +116,7 @@ async def main():
             
             logger.info("正在重启WebSocket服务器...")
             await asyncio.sleep(1)  # 等待1秒后重启
-    
-    message_send_instance.maibot_router = router
+
     _ = await asyncio.gather(napcat_with_restart(), mmc_start_com(), message_process(), check_timeout_response())
 
 def check_napcat_server_token(conn, request):
