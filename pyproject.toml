@@ -1,6 +1,6 @@
 [project]
 name = "MaiBotNapcatAdapter"
-version = "0.5.5"
+version = "0.7.0"
 description = "A MaiBot adapter for Napcat"
 requires-python = ">=3.10"
 dependencies = [
