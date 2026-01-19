@@ -68,6 +68,9 @@ class SendMessageHandleClass:
         elif seg.type == "video":
             video_path = seg.data
             new_payload = cls.build_payload(payload, cls.handle_video_message(video_path), False)
+        elif seg.type == "at":
+            at_user_id = seg.data
+            new_payload = cls.build_payload(payload, cls.handle_at_message(at_user_id), False)
         elif seg.type == "forward" and not in_forward:
             forward_message_content: List[Dict] = seg.data
             new_payload: List[Dict] = [
@@ -292,4 +295,12 @@ class SendMessageHandleClass:
         return {
             "type": "video",
             "data": {"file": f"base64://{encoded_video}"},
+        }
+
+    @staticmethod
+    def handle_at_message(user_id: str) -> dict:
+        """处理at消息"""
+        return {
+            "type": "at",
+            "data": {"qq": user_id},
         }
