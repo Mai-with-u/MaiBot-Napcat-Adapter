@@ -5,6 +5,7 @@ import uuid
 import urllib3
 import ssl
 import io
+import asyncio
 
 from src.database import BanUser, db_manager
 from .logger import logger
@@ -94,17 +95,20 @@ async def get_member_info(websocket: Server.ServerConnection, group_id: int, use
     logger.debug(socket_response)
     return socket_response.get("data")
 
+def _blocking_download(url: str) -> bytes:
+    http = SSLAdapter()
+    response = http.request("GET", url, timeout=10)
+    if response.status != 200:
+        raise Exception(f"HTTP Error: {response.status}")
+    return response.data
+
 
 async def get_image_base64(url: str) -> str:
     # sourcery skip: raise-specific-error
     """获取图片/表情包的Base64"""
     logger.debug(f"下载图片: {url}")
-    http = SSLAdapter()
     try:
-        response = http.request("GET", url, timeout=10)
-        if response.status != 200:
-            raise Exception(f"HTTP Error: {response.status}")
-        image_bytes = response.data
+        image_bytes = await asyncio.to_thread(_blocking_download, url)
         return base64.b64encode(image_bytes).decode("utf-8")
     except Exception as e:
         logger.error(f"图片下载失败: {str(e)}")
