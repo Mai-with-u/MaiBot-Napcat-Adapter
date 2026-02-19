@@ -30,6 +30,8 @@ async def message_recv(server_connection: Server.ServerConnection):
                 await message_queue.put(decoded_raw_message)
             elif post_type is None:
                 await put_response(decoded_raw_message)
+    except websockets.ConnectionClosedError as e:
+        logger.info(f"✅ WebSocket 连接已正常关闭 (代码: {e.code}, 原因: {e.reason})")
     except asyncio.CancelledError:
         logger.debug("message_recv 收到取消信号，正在关闭连接")
         await server_connection.close()
