@@ -35,12 +35,17 @@ from src.response_pool import get_response
 
 class MessageHandler:
     def __init__(self):
-        self.server_connection: Server.ServerConnection = None
+        self.server_connection: Optional[Server.ServerConnection] = None
         self.bot_id_list: Dict[int, bool] = {}
 
     async def set_server_connection(self, server_connection: Server.ServerConnection) -> None:
         """设置Napcat连接"""
         self.server_connection = server_connection
+
+    async def clear_server_connection(self) -> None:
+        """清理Napcat连接引用"""
+        self.server_connection = None
+        logger.debug("MessageHandler中的server_connection引用已清理")
 
     async def check_allow_to_chat(
         self,
