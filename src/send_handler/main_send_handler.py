@@ -150,7 +150,10 @@ class SendHandler:
             id_name = "group_id"
         elif user_info:
             logger.debug("发送私聊消息")
-            target_id = user_info.user_id
+            # 新版 MaiBot 出站私聊时 user_info 是机器人自身，真正的目标 QQ 在
+            # additional_config["platform_io_target_user_id"]；旧版本 fallback 回 user_info
+            additional_config = message_info.additional_config or {}
+            target_id = additional_config.get("platform_io_target_user_id") or user_info.user_id
             action = "send_private_msg"
             id_name = "user_id"
         else:
