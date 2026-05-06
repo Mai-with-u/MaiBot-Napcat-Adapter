@@ -221,6 +221,15 @@ class MessageHandler:
         if global_config.voice.use_tts:
             additional_config["allow_tts"] = True
 
+        # 注入 OneBot v11 sender.role 到 additional_config，供插件权限判断使用
+        try:
+            if message_type == MessageType.group:
+                sender_role = raw_message.get("sender", {}).get("role", "")
+                if sender_role:
+                    additional_config["user_role"] = sender_role
+        except Exception:
+            pass
+
         if not seg_message:
             logger.warning("处理后消息内容为空")
             return None
