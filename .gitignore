@@ -6,6 +6,8 @@ out/
 .env
 .env.*
 .cursor
+.clinerules/
+ws_monitor.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
