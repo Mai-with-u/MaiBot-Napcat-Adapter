@@ -63,11 +63,6 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             timestamp_seconds = time.time()
 
         additional_config: Dict[str, Any] = {"self_id": self_id, "napcat_message_type": message_type}
-        if group_id:
-            additional_config["platform_io_target_group_id"] = group_id
-        else:
-            additional_config["platform_io_target_user_id"] = sender_user_id
-
         message_info: Dict[str, Any] = {
             "user_info": {
                 "user_id": sender_user_id,
@@ -76,8 +71,13 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             },
             "additional_config": additional_config,
         }
-        if group_id:
+
+        # 仅按 message_type 判定群/私：私聊（如群临时会话）也可能携带 group_id。
+        if message_type == "group":
+            additional_config["platform_io_target_group_id"] = group_id
             message_info["group_info"] = {"group_id": group_id, "group_name": group_name}
+        else:
+            additional_config["platform_io_target_user_id"] = sender_user_id
 
         message_id = str(payload.get("message_id") or f"napcat-{uuid4().hex}").strip()
         return {
