@@ -35,12 +35,17 @@ from src.response_pool import get_response
 
 class MessageHandler:
     def __init__(self):
-        self.server_connection: Server.ServerConnection = None
+        self.server_connection: Optional[Server.ServerConnection] = None
         self.bot_id_list: Dict[int, bool] = {}
 
     async def set_server_connection(self, server_connection: Server.ServerConnection) -> None:
         """设置Napcat连接"""
         self.server_connection = server_connection
+
+    async def clear_server_connection(self) -> None:
+        """清理Napcat连接引用"""
+        self.server_connection = None
+        logger.debug("MessageHandler中的server_connection引用已清理")
 
     async def check_allow_to_chat(
         self,
@@ -215,6 +220,15 @@ class MessageHandler:
         seg_message, additional_config = await self.handle_real_message(raw_message)
         if global_config.voice.use_tts:
             additional_config["allow_tts"] = True
+
+        # 注入 OneBot v11 sender.role 到 additional_config，供插件权限判断使用
+        try:
+            if message_type == MessageType.group:
+                sender_role = raw_message.get("sender", {}).get("role", "")
+                if sender_role:
+                    additional_config["user_role"] = sender_role
+        except Exception:
+            pass
 
         if not seg_message:
             logger.warning("处理后消息内容为空")
