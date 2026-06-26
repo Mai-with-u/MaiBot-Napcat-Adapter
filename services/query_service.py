@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, List, Mapping, Optional
 
-from ..types import NapCatActionParams, NapCatActionResponse, NapCatPayloadDict, NapCatPayloadList
+from ..napcat_types import NapCatActionParams, NapCatActionResponse, NapCatPayloadDict, NapCatPayloadList
 from .action_service import NapCatActionService
 
 

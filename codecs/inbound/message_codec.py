@@ -10,7 +10,7 @@ import time
 
 from ...qq_emoji_list import QQ_FACE
 from ...services import NapCatQueryService
-from ...types import NapCatIncomingSegment, NapCatIncomingSegments, NapCatPayload, NapCatSegment, NapCatSegments
+from ...napcat_types import NapCatIncomingSegment, NapCatIncomingSegments, NapCatPayload, NapCatSegment, NapCatSegments
 from ..notice.helpers import normalize_optional_string
 from .cards import NapCatInboundCardMixin
 from .text import NapCatInboundTextMixin

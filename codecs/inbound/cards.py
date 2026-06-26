@@ -9,7 +9,7 @@ import json
 import re
 
 from ...qq_emoji_list import QQ_FACE
-from ...types import NapCatSegment, NapCatSegments
+from ...napcat_types import NapCatSegment, NapCatSegments
 
 if TYPE_CHECKING:
     from ...services import NapCatQueryService

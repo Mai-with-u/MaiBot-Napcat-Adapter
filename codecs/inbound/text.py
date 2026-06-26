@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 import base64
 
-from ...types import NapCatSegments
+from ...napcat_types import NapCatSegments
 
 
 class NapCatInboundTextMixin:

@@ -8,7 +8,7 @@ import asyncio
 
 from ..codecs.notice.helpers import resolve_actor_user_id
 from ..config import NapCatPluginSettings
-from ..types import NapCatPayloadDict
+from ..napcat_types import NapCatPayloadDict
 from .bundle import NapCatRuntimeBundle
 
 

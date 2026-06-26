@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, TypeAlias
 
 from maibot_sdk import API
 
-from ..types import NapCatActionParamsInput, NapCatActionResponse, NapCatIdInput
+from ..napcat_types import NapCatActionParamsInput, NapCatActionResponse, NapCatIdInput
 
 if TYPE_CHECKING:
     from ..services import NapCatActionService, NapCatQueryService

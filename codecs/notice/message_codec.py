@@ -8,7 +8,7 @@ from uuid import uuid4
 import time
 
 from ...services import NapCatQueryService
-from ...types import NapCatPayload, NapCatPayloadDict
+from ...napcat_types import NapCatPayload, NapCatPayloadDict
 from .enricher import NapCatNoticeEntityResolver
 from .helpers import build_payload_digest, resolve_actor_user_id
 from .meta_event_logger import NapCatMetaEventObserver
