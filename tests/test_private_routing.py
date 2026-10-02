@@ -84,7 +84,7 @@ class PrivateRoutingTests(IsolatedAsyncioTestCase):
                     inbound_codec=self.codec,
                     regex_filter=SimpleNamespace(is_message_allowed=Mock(return_value=True)),
                 )
-                router = NapCatEventRouter(gateway, Mock(), "test", lambda: settings)
+                router = NapCatEventRouter(gateway, Mock(), "test", lambda settings=settings: settings)
                 router.bind_runtime(runtime)
                 await router.handle_inbound_message(self.payload)
                 if allow_private:
