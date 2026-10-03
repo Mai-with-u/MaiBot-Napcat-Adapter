@@ -104,7 +104,8 @@ class NapCatEventRouter:
         if not sender_user_id:
             return
 
-        group_id = str(payload.get("group_id") or "").strip()
+        # 群来源临时私聊也携带 group_id，名单与会话归属必须以消息类型为准。
+        group_id = str(payload.get("group_id") or "").strip() if payload.get("message_type") == "group" else ""
         if self_id and sender_user_id == self_id and settings.filters.ignore_self_message:
             return
         if not runtime.chat_filter.is_inbound_chat_allowed(sender_user_id, group_id, settings.chat):

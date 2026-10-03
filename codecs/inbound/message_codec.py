@@ -48,7 +48,9 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             Dict[str, Any]: 规范化后的 ``MessageDict``。
         """
         message_type = str(payload.get("message_type") or "").strip() or "private"
-        group_id = str(payload.get("group_id") or "").strip()
+        source_group_id = str(payload.get("group_id") or "").strip()
+        # 临时私聊的 group_id 仅表示来源群，不能用于聊天归属或回复目标。
+        group_id = source_group_id if message_type == "group" else ""
         group_name = str(payload.get("group_name") or "").strip() or (f"group_{group_id}" if group_id else "")
         user_nickname = str(sender.get("nickname") or sender.get("card") or sender_user_id).strip() or sender_user_id
         user_cardname = str(sender.get("card") or "").strip() or None
@@ -63,6 +65,8 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             timestamp_seconds = time.time()
 
         additional_config: Dict[str, Any] = {"self_id": self_id, "napcat_message_type": message_type}
+        if message_type == "private" and source_group_id:
+            additional_config["napcat_temp_source_group_id"] = source_group_id
         if group_id:
             additional_config["platform_io_target_group_id"] = group_id
         else:
@@ -131,7 +135,8 @@ class NapCatInboundCodec(NapCatInboundCardMixin, NapCatInboundTextMixin):
             以及不参与纯文本处理的平台卡片元数据。
         """
         message_payload = self._require_message_segments(payload)
-        group_id = str(payload.get("group_id") or "").strip()
+        # 私聊消息段不应借来源群进行群成员解析。
+        group_id = str(payload.get("group_id") or "").strip() if payload.get("message_type") == "group" else ""
         platform_card_payloads: List[Dict[str, Any]] = []
         raw_message, is_at = await self._convert_incoming_segments(
             message_payload,
