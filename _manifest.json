@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "version": "1.4.0",
-  "name": "Napcat_Adapter 适配器",
-  "description": "插件版Napcat适配器，提供与Napcat的连接功能。",
+  "version": "1.4.1",
+  "name": "Napcat 适配器 （不再更新，请使用Snowluma适配器）",
+  "description": " （不再更新，请使用Snowluma适配器）插件版Napcat适配器，提供与Napcat的连接功能。",
   "author": {
     "name": "MaiBot Team",
     "url": "https://github.com/Mai-with-u"
@@ -16,7 +16,7 @@
   },
   "host_application": {
     "min_version": "1.2.0",
-    "max_version": "1.2.99"
+    "max_version": "1.3.99"
   },
   "sdk": {
     "min_version": "2.5.0",
